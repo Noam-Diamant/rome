@@ -6,6 +6,27 @@ from util.hparams import HyperParams
 
 @dataclass
 class ROMEHyperParams(HyperParams):
+    KEYS = [
+        "layers",
+        "fact_token",
+        "v_num_grad_steps",
+        "v_lr",
+        "v_loss_layer",
+        "v_weight_decay",
+        "clamp_norm_factor",
+        "kl_factor",
+        "mom2_adjustment",
+        "context_template_length_params",
+        "rewrite_module_tmp",
+        "layer_module_tmp",
+        "mlp_module_tmp",
+        "attn_module_tmp",
+        "ln_f_module",
+        "lm_head_module",
+        "mom2_dataset",
+        "mom2_n_samples",
+        "mom2_dtype",
+    ]
     # Method
     layers: List[int]
     fact_token: str
@@ -34,6 +55,28 @@ class ROMEHyperParams(HyperParams):
 
 @dataclass
 class ROMEMODIFIEDHyperParams(HyperParams):
+    KEYS = [
+        "layers",
+        "fact_token",
+        "v_num_grad_steps",
+        "v_lr",
+        "v_loss_layer",
+        "v_weight_decay",
+        "v_alpha",
+        "clamp_norm_factor",
+        "kl_factor",
+        "mom2_adjustment",
+        "context_template_length_params",
+        "rewrite_module_tmp",
+        "layer_module_tmp",
+        "mlp_module_tmp",
+        "attn_module_tmp",
+        "ln_f_module",
+        "lm_head_module",
+        "mom2_dataset",
+        "mom2_n_samples",
+        "mom2_dtype",
+    ]
     # Method
     layers: List[int]
     fact_token: str

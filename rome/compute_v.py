@@ -333,7 +333,7 @@ def compute_v_modified(
     nethook.set_requires_grad(False, model)
 
     # Execute optimization
-    for it in range(100):#(hparams.v_num_grad_steps):
+    for it in range(hparams.v_num_grad_steps):
         opt.zero_grad()
 
         # Forward propagation
