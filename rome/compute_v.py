@@ -382,15 +382,16 @@ def compute_v_modified(
         )
         # weight_decay = hparams.v_weight_decay * torch.norm(delta) ** 2
         alpha = 0.000001
-        alpha = 0.00001
-        alpha = 0.0001
-        alpha = 0.001
-        alpha = 0.01
-        alpha = 0.1
+        # alpha = 0.00001
+        # alpha = 0.0001
+        # alpha = 0.001
+        # alpha = 0.01
+        # alpha = 0.1
 
         #l1_loss = alpha * torch.nn.functional.l1_loss(delta, torch.zeros_like(delta))
         l1_loss = alpha * delta.norm(p=1, dim=-1).mean()
-        loss = nll_loss + l1_loss + weight_decay# + kl_loss + weight_decay
+        loss = nll_loss + l1_loss
+        #loss = nll_loss + kl_loss + weight_decay
         # Absolute magnitude of real changes
         abs_changes = applied_delta.abs()
 
@@ -428,15 +429,6 @@ def compute_v_modified(
         #loss.backward(retain_graph=True)
 
         opt.step()
-        ##########################################################3
-        # with torch.no_grad():
-        #     k = int(delta.numel() * 0.05)  # Keep only top 5%
-        #     flat = delta.view(-1)
-        #     topk_vals, topk_idx = torch.topk(flat.abs(), k)
-        #     mask = torch.zeros_like(flat)
-        #     mask[topk_idx] = 1.0
-        #     delta.data *= mask.view_as(delta)
-        ##########################################################
 
         # Project within L2 ball
         max_norm = hparams.clamp_norm_factor * target_init.norm()
