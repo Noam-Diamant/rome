@@ -40,6 +40,13 @@ def main(
                 break
 
             cur_sum["time"].append(data["time"])
+            # Store custom delta sparsity metrics
+            if "delta_sparsity_count" in data:
+                cur_sum["delta_sparsity_count"].append(data["delta_sparsity_count"])
+            if "delta_sparsity_percentage" in data:
+                cur_sum["delta_sparsity_percentage"].append(data["delta_sparsity_percentage"])
+            if "mean_change" in data and isinstance(data["mean_change"], (int, float)):
+                cur_sum["mean_change"].append(data["mean_change"])
 
             for prefix in ["pre", "post"]:
                 # Probability metrics for which new should be lower (better) than true
@@ -143,9 +150,14 @@ def main(
                     break
 
         for k, v in cur_sum.items():
-            if all(exclude not in k for exclude in ["essence_score", "time"]):
-                # Constant multiplication scales linearly with mean and stddev
+            if k in ["delta_sparsity_count", "mean_change", "delta_sparsity_percentage"]:
+                # Don't scale these
+                cur_sum[k] = tuple(np.around(z, 2) for z in v)
+                continue
+            elif all(exclude not in k for exclude in ["essence_score", "time"]):
+                # Scale all other non-excluded metrics
                 cur_sum[k] = tuple(np.around(z * 100, 2) for z in v)
+
 
         cur_sum.update(metadata)
         pprint(cur_sum)

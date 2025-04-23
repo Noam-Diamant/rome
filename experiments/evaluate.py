@@ -7,11 +7,13 @@ from typing import Tuple, Union
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import nltk
 
-from baselines.efk import EFKHyperParams, EfkRewriteExecutor
-from baselines.ft import FTHyperParams, apply_ft_to_model
-from baselines.kn import KNHyperParams, apply_kn_to_model
-from baselines.mend import MENDHyperParams, MendRewriteExecutor
+
+# from baselines.efk import EFKHyperParams, EfkRewriteExecutor
+# from baselines.ft import FTHyperParams, apply_ft_to_model
+# from baselines.kn import KNHyperParams, apply_kn_to_model
+# from baselines.mend import MENDHyperParams, MendRewriteExecutor
 from dsets import (
     AttributeSnippets,
     CounterFactDataset,
@@ -20,16 +22,17 @@ from dsets import (
 )
 from experiments.py.eval_utils_counterfact import compute_rewrite_quality_counterfact
 from experiments.py.eval_utils_zsre import compute_rewrite_quality_zsre
-from rome import ROMEHyperParams, apply_rome_to_model
+from rome import *
 from util import nethook
 from util.globals import *
 
 ALG_DICT = {
     "ROME": (ROMEHyperParams, apply_rome_to_model),
-    "FT": (FTHyperParams, apply_ft_to_model),
-    "KN": (KNHyperParams, apply_kn_to_model),
-    "MEND": (MENDHyperParams, MendRewriteExecutor().apply_to_model),
-    "KE": (EFKHyperParams, EfkRewriteExecutor().apply_to_model),
+    "ROME_MODIFIED": (ROMEHyperParams, apply_rome_to_model_modified),
+    # "FT": (FTHyperParams, apply_ft_to_model),
+    # "KN": (KNHyperParams, apply_kn_to_model),
+    # "MEND": (MENDHyperParams, MendRewriteExecutor().apply_to_model),
+    # "KE": (EFKHyperParams, EfkRewriteExecutor().apply_to_model),
 }
 
 DS_DICT = {
@@ -133,6 +136,9 @@ def main(
                 "time": exec_time,
                 "post": ds_eval_method(edited_model, tok, record, snips, vec),
             }
+            if isinstance(weights_copy, tuple) and len(weights_copy) == 2:
+                weights_copy, extra_metrics = weights_copy
+                metrics.update(extra_metrics)
 
             with torch.no_grad():
                 for k, v in weights_copy.items():
@@ -152,7 +158,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--alg_name",
-        choices=["ROME", "FT", "KN", "MEND", "KE"],
+        choices=["ROME", "FT", "KN", "MEND", "KE", "ROME_MODIFIED"],
         default="ROME",
         help="Editing algorithm to use. Results are saved in results/<alg_name>/<run_id>, "
         "where a new run_id is generated on each run. "
@@ -161,7 +167,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model_name",
-        choices=["gpt2-medium", "gpt2-large", "gpt2-xl", "EleutherAI/gpt-j-6B"],
+        choices=["gpt2-medium", "gpt2-large", "gpt2-xl", "EleutherAI/gpt-j-6B", "Qwen/Qwen2-0.5B"],
         default="gpt2-xl",
         help="Model to edit.",
         required=True,

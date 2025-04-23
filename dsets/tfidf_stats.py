@@ -30,11 +30,18 @@ def get_tfidf_vectorizer(data_dir: str):
     with open(vocab_loc, "r") as f:
         vocab = json.load(f)
 
-    class MyVectorizer(TfidfVectorizer):
-        TfidfVectorizer.idf_ = idf
+    # Dummy document using all vocab words to initialize properly
+    inv_vocab = [None] * len(vocab)
+    for word, idx in vocab.items():
+        inv_vocab[idx] = word
+    dummy_doc = " ".join(inv_vocab)
 
-    vec = MyVectorizer()
+    vec = TfidfVectorizer()
+    vec.fit([dummy_doc])  # Fit on dummy text that includes all vocab terms
+
+    # Overwrite with real vocab and IDF
     vec.vocabulary_ = vocab
+    vec.idf_ = idf
     vec._tfidf._idf_diag = sp.spdiags(idf, diags=0, m=len(idf), n=len(idf))
 
     return vec

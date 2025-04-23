@@ -95,18 +95,30 @@ def layer_stats(
     def get_ds():
         raw_ds = load_dataset(
             ds_name,
-            dict(wikitext="wikitext-103-raw-v1", wikipedia="20200501.en")[ds_name],
+            dict(wikitext="wikitext-103-raw-v1", wikipedia="20220301.en")[ds_name],
+            trust_remote_code=True,
         )
-        maxlen = model.config.n_positions
+        maxlen = getattr(model.config, "n_positions", getattr(model.config, "max_position_embeddings", None))
+
         if batch_tokens is not None and batch_tokens < maxlen:
             maxlen = batch_tokens
+            #############################################################################
+            #maxlen = min(maxlen, 2048)
+            #############################################################################
         return TokenizedDataset(raw_ds["train"], tokenizer, maxlen=maxlen)
 
     # Continue with computation of statistics
-    batch_size = 100  # Examine this many dataset texts at once
-    npos = model.config.n_positions
+    #############################################################################
+    batch_size = 10  # Examine this many dataset texts at
+    #batch_size = 100  # Examine this many dataset texts at 
+    #############################################################################
+    npos = getattr(model.config, "n_positions", None) or getattr(model.config, "max_position_embeddings", None)
     if batch_tokens is None:
+        #############################################################################
         batch_tokens = npos * 3  # Sort and divide into batches with this many tokens
+        batch_tokens = 2048
+        #batch_tokens = npos * 3  # Sort and divide into batches with this many tokens
+        #############################################################################
     if precision is None:
         precision = "float64"
     dtype = getattr(torch, precision)
@@ -155,13 +167,28 @@ def layer_stats(
             for batch in batch_group:
                 batch = dict_to_(batch, "cuda")
                 with Trace(
+                    #############################################################################
+                    #model, layer_name, retain_input=False, retain_output=True, stop=True
+                    #############################################################################
                     model, layer_name, retain_input=True, retain_output=False, stop=True
                 ) as tr:
                     model(**batch)
+                #############################################################################
+                #feats = flatten_masked_batch(tr.output, batch["attention_mask"])
                 feats = flatten_masked_batch(tr.input, batch["attention_mask"])
-                # feats = flatten_masked_batch(tr.output, batch["attention_mask"])
+                #############################################################################
+########################################################################################################################################################
+                #feats = feats.to(dtype=dtype).cpu()
                 feats = feats.to(dtype=dtype)
+########################################################################################################################################################
                 stat.add(feats)
+                
+
+
+########################################################################################################################################################
+                torch.cuda.empty_cache()
+########################################################################################################################################################
+
     return stat
 
 
