@@ -1,6 +1,6 @@
 from copy import deepcopy
 from typing import Dict, List, Tuple
-
+import wandb
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -9,7 +9,7 @@ from util.generate import generate_fast
 
 from .compute_u import *
 from .compute_v import *
-from .rome_hparams import ROMEHyperParams
+from .rome_hparams import ROMEHyperParams, ROMEMODIFIEDHyperParams
 
 CONTEXT_TEMPLATES_CACHE = None
 
@@ -206,7 +206,7 @@ def apply_rome_to_model_modified(
     model: AutoModelForCausalLM,
     tok: AutoTokenizer,
     requests: List[Dict],
-    hparams: ROMEHyperParams,
+    hparams: ROMEMODIFIEDHyperParams,
     copy=False,
     return_orig_weights=False,
 ):
@@ -248,7 +248,7 @@ def execute_rome_modified(
     model: AutoModelForCausalLM,
     tok: AutoTokenizer,
     request: Dict,
-    hparams: ROMEHyperParams,
+    hparams: ROMEMODIFIEDHyperParams,
 ):
     """
     Executes the ROME update algorithm for the specified update at the specified layer

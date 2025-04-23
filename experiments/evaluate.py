@@ -23,12 +23,13 @@ from dsets import (
 from experiments.py.eval_utils_counterfact import compute_rewrite_quality_counterfact
 from experiments.py.eval_utils_zsre import compute_rewrite_quality_zsre
 from rome import *
+from rome.rome_hparams import ROMEHyperParams, ROMEMODIFIEDHyperParams
 from util import nethook
 from util.globals import *
 
 ALG_DICT = {
     "ROME": (ROMEHyperParams, apply_rome_to_model),
-    "ROME_MODIFIED": (ROMEHyperParams, apply_rome_to_model_modified),
+    "ROME_MODIFIED": (ROMEMODIFIEDHyperParams, apply_rome_to_model_modified),
     # "FT": (FTHyperParams, apply_ft_to_model),
     # "KN": (KNHyperParams, apply_kn_to_model),
     # "MEND": (MENDHyperParams, MendRewriteExecutor().apply_to_model),

@@ -381,7 +381,7 @@ def compute_v_modified(
             torch.norm(delta) / torch.norm(target_init) ** 2
         )
         # weight_decay = hparams.v_weight_decay * torch.norm(delta) ** 2
-        alpha = 0.000001
+        alpha = hparams.v_alpha#0.000001
         # alpha = 0.00001
         # alpha = 0.0001
         # alpha = 0.001
