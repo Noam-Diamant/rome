@@ -1,0 +1,67 @@
+{
+  "os": "Linux-5.14.0-503.21.1.el9_5.x86_64-x86_64-with-glibc2.34",
+  "python": "CPython 3.11.11",
+  "startedAt": "2025-04-24T20:02:43.220681Z",
+  "args": [
+    "--alg_name=ROME",
+    "--model_name=Qwen/Qwen2-0.5B",
+    "--hparams_fname=Qwen_Qwen2-0.5B.json",
+    "--sweep_keys=v_lr,v_num_grad_steps",
+    "--sweep_vals_list=0.5,0.1;3",
+    "--num_records=2",
+    "--parallel_id=lr_steps_test"
+  ],
+  "program": "-m experiments.sweep",
+  "git": {
+    "remote": "https://github.com/Noam-Diamant/rome.git",
+    "commit": "f68fec9f002634b519642b408ec074c2cfbbc491"
+  },
+  "email": "noamd1234@gmail.com",
+  "root": "/dsi/fetaya-lab/noam_diamant/projects/Unlearning_with_SAE/rome/notebooks",
+  "host": "dsief02",
+  "executable": "/dsi/fetaya-lab/noam_diamant/conda/envs/mod_sae/bin/python3",
+  "cpu_count": 24,
+  "cpu_count_logical": 48,
+  "gpu": "NVIDIA TITAN RTX",
+  "gpu_count": 4,
+  "disk": {
+    "/": {
+      "total": "1911928655872",
+      "used": "589546815488"
+    }
+  },
+  "memory": {
+    "total": "200810676224"
+  },
+  "cpu": {
+    "count": 24,
+    "countLogical": 48
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA TITAN RTX",
+      "memoryTotal": "25769803776",
+      "cudaCores": 4608,
+      "architecture": "Turing"
+    },
+    {
+      "name": "NVIDIA TITAN RTX",
+      "memoryTotal": "25769803776",
+      "cudaCores": 4608,
+      "architecture": "Turing"
+    },
+    {
+      "name": "NVIDIA TITAN RTX",
+      "memoryTotal": "25769803776",
+      "cudaCores": 4608,
+      "architecture": "Turing"
+    },
+    {
+      "name": "NVIDIA TITAN RTX",
+      "memoryTotal": "25769803776",
+      "cudaCores": 4608,
+      "architecture": "Turing"
+    }
+  ],
+  "cudaVersion": "12.4"
+}

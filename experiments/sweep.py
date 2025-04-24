@@ -2,6 +2,7 @@ import json
 import os
 from typing import List
 import itertools
+import wandb
 
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -79,7 +80,7 @@ def main(
             ds_name="cf",
         )
 
-    os.remove(tmp_params_path)
+        os.remove(tmp_params_path)
 
 
 if __name__ == "__main__":

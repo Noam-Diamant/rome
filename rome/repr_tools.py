@@ -5,7 +5,7 @@ from string templates. Used in computing the left and right vectors for ROME.
 
 from copy import deepcopy
 from typing import List
-
+import wandb
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 

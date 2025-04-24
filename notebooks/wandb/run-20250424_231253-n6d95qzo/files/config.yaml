@@ -1,0 +1,85 @@
+_wandb:
+    value:
+        cli_version: 0.19.8
+        m: []
+        python_version: 3.11.11
+        t:
+            "1":
+                - 1
+                - 5
+                - 11
+                - 49
+                - 51
+                - 53
+                - 55
+                - 71
+                - 105
+            "2":
+                - 1
+                - 5
+                - 11
+                - 49
+                - 51
+                - 53
+                - 55
+                - 71
+                - 105
+            "3":
+                - 13
+                - 16
+                - 23
+                - 24
+                - 55
+                - 61
+            "4": 3.11.11
+            "5": 0.19.8
+            "6": 4.50.2
+            "8":
+                - 5
+            "12": 0.19.8
+            "13": linux-x86_64
+attn_module_tmp:
+    value: model.layers.{}.self_attn
+clamp_norm_factor:
+    value: 4
+context_template_length_params:
+    value:
+        - - 5
+          - 10
+        - - 10
+          - 10
+fact_token:
+    value: subject_last
+kl_factor:
+    value: 0.0625
+layer_module_tmp:
+    value: model.layers.{}
+layers:
+    value:
+        - 4
+lm_head_module:
+    value: lm_head
+ln_f_module:
+    value: model.norm
+mlp_module_tmp:
+    value: model.layers.{}.mlp
+mom2_adjustment:
+    value: true
+mom2_dataset:
+    value: wikipedia
+mom2_dtype:
+    value: float32
+mom2_n_samples:
+    value: 100000
+rewrite_module_tmp:
+    value: model.layers.{}.mlp.down_proj
+v_alpha:
+    value: 1e-06
+v_loss_layer:
+    value: 23
+v_lr:
+    value: 0.5
+v_num_grad_steps:
+    value: 3
+v_weight_decay:
+    value: 0.5

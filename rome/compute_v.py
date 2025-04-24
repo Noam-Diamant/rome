@@ -1,5 +1,5 @@
 from typing import Dict, List, Tuple
-
+import wandb
 import numpy as np
 import torch
 from matplotlib.style import context
@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from rome import repr_tools
 from util import nethook
 
-from .rome_hparams import ROMEHyperParams
+from .rome_hparams import ROMEHyperParams, ROMEMODIFIEDHyperParams
 
 ######################################################################################################################################################
 ######################################################################################################################################################
@@ -215,7 +215,7 @@ def compute_v_modified(
     model: AutoModelForCausalLM,
     tok: AutoTokenizer,
     request: Dict,
-    hparams: ROMEHyperParams,
+    hparams: ROMEMODIFIEDHyperParams,
     layer: int,
     left_vector: torch.Tensor,
     context_templates: List[str],
@@ -291,17 +291,12 @@ def compute_v_modified(
 ######################################################################################################################################################
     random_feature_acts = sae.encode(delta)
     delta = torch.zeros_like(random_feature_acts, requires_grad=True, device="cuda")
-    diff = None
-    applied_delta = None
-    do_clamp = None
+    diff, sum_feature_acts_sparsity_count, applied_delta, do_clamp = None, None, None, None
 ######################################################################################################################################################
-
     target_init, kl_distr_init = None, None
-
     # Inserts new "delta" variable at the appropriate part of the computation
     def edit_output_fn(cur_out, cur_layer):
-        nonlocal target_init, diff
-        nonlocal applied_delta, do_clamp
+        nonlocal target_init, diff, sum_feature_acts_sparsity_count, do_clamp, applied_delta
         do_clamp = True
         if cur_layer == hparams.mlp_module_tmp.format(layer):
             # Store initial value of the vector of interest
@@ -316,11 +311,16 @@ def compute_v_modified(
                 diff = (target_init - sae_out_init).detach()
             # insert delta in the feature space
             cur_out = cur_out.clone()
+            sum_feature_acts_sparsity_count = 0
             for i, idx in enumerate(lookup_idxs):
                 residual_vector = cur_out[i, idx, :].clone()                 
                 feature_acts = sae.encode(residual_vector).detach()
+                non_zero_change_mask_feature_acts = feature_acts > 1e-6
+                # Count how many features were actually changed in the feature space
+                feature_acts_sparsity_count = non_zero_change_mask_feature_acts.sum().item()   
+                sum_feature_acts_sparsity_count += feature_acts_sparsity_count 
                 new_feature_acts = feature_acts + delta
-                if do_clamp:
+                if do_clamp: ######
                     new_feature_acts = F.relu(new_feature_acts)#torch.clamp(new_feature_acts, min = 0.0) #clamp at zereo to preserve the SAE behaviour
                 applied_delta = new_feature_acts - feature_acts
                 sae_out = sae.decode(new_feature_acts) + diff
@@ -331,7 +331,8 @@ def compute_v_modified(
     # Optimizer
     opt = torch.optim.Adam([delta], lr=hparams.v_lr)
     nethook.set_requires_grad(False, model)
-
+    loss_curve = {"nll_loss": [], "l1_loss": [], "total_loss": []}
+    delta_curve = {"delta_sparsity_count": [], "delta_sparsity_percentage": [], "delta_sparsity_ratio_feature_acts": [], "mean_change": []}
     # Execute optimization
     for it in range(hparams.v_num_grad_steps):
         opt.zero_grad()
@@ -400,23 +401,40 @@ def compute_v_modified(
 
         # Count how many features were actually changed
         delta_sparsity_count = non_zero_change_mask.sum().item()
+        # Count how many features were were in the feature space
+        mean_feature_acts_sparsity_count = sum_feature_acts_sparsity_count / len(lookup_idxs)
 
         # Percentage of changed features out of total
         delta_sparsity_percentage = 100.0 * delta_sparsity_count / delta.numel()
+        delta_sparsity_ratio_feature_acts = 100.0 * delta_sparsity_count / mean_feature_acts_sparsity_count 
+        feature_acts_sparsity_percentage = 100.0 * mean_feature_acts_sparsity_count / delta.numel()
+        
+
 
         # Mean magnitude of the actual changes (L1 mean)
         mean_change = (
             abs_changes[non_zero_change_mask].mean().item()
             if delta_sparsity_count > 0
-            else "UNDEFINED"
+            else None
         )
+        loss_curve["nll_loss"].append(nll_loss.item())
+        loss_curve["l1_loss"].append(l1_loss.item())
+        loss_curve["total_loss"].append(loss.item())
+        delta_curve["delta_sparsity_count"].append(delta_sparsity_count)
+        delta_curve["delta_sparsity_percentage"].append(delta_sparsity_percentage)
+        delta_curve["delta_sparsity_ratio_feature_acts"].append(delta_sparsity_ratio_feature_acts)
+        delta_curve["mean_change"].append(mean_change)
+
         print(f"ITERATION {it+1}")
         print(
-            f"loss {np.round(loss.item(), 3)} = {np.round(nll_loss.item(), 3)} + {np.round(l1_loss.item(), 3)} + {np.round(weight_decay.item(), 3)} "
+            f"loss {np.round(loss.item(), 3)} = {np.round(nll_loss.item(), 3)} + {np.round(l1_loss.item(), 3)}"
             f"avg prob of [{request['target_new']['str']}] "
             f"{torch.exp(-nll_loss_each).mean().item()}"
         )
-        print(f"Number of actives featurs in delta: Count: {delta_sparsity_count}, Percentage: {delta_sparsity_percentage:.2f}%, Mean change value: {mean_change}")
+        print(f"Number of actives featurs in delta: Count: {delta_sparsity_count}, Percentage: {delta_sparsity_percentage:.2f}%")
+        print(f"Number of actives featurs in feature space of the target: Count: {mean_feature_acts_sparsity_count:.2f}, Percentage: {feature_acts_sparsity_percentage:.2f}%")
+        print(f"ratio between delta and feature_acts: {delta_sparsity_ratio_feature_acts:.2f}%")
+        print(f"Mean change in feature space: {mean_change}")
         print("#############################################################################################################")
         # if loss < 5e-2:
         #     break
@@ -466,7 +484,15 @@ def compute_v_modified(
     right_vector_metadata = {
         "delta_sparsity_count": delta_sparsity_count,
         "delta_sparsity_percentage": delta_sparsity_percentage,
+        "delta_sparsity_ratio_feature_acts": delta_sparsity_ratio_feature_acts,
+        "feature_acts_sparsity_count": mean_feature_acts_sparsity_count,
+        "feature_acts_sparsity_percentage": feature_acts_sparsity_percentage,
         "mean_change": mean_change,
+        "l1_loss": l1_loss.item(),
+        "nll_loss": nll_loss.item(),
+        "total_loss": loss.item(),
+        "delta_curve": delta_curve,
+        "loss_curve": loss_curve,
     }
     del loss, logits, kl_logits, log_probs, rewriting_targets, delta
     kl_distr_init = None

@@ -7,6 +7,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from rome import repr_tools
 from util.globals import *
+import wandb
 
 from .layer_stats import layer_stats
 from .rome_hparams import ROMEHyperParams

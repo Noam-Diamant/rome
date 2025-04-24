@@ -4,7 +4,9 @@ import shutil
 from pathlib import Path
 from time import time
 from typing import Tuple, Union
-
+from typing import Tuple, Union, List, Dict
+import wandb
+from tqdm import tqdm
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import nltk
@@ -40,6 +42,60 @@ DS_DICT = {
     "cf": (CounterFactDataset, compute_rewrite_quality_counterfact),
     "zsre": (MENDQADataset, compute_rewrite_quality_zsre),
 }
+
+
+def log_grouped_line_series(metric_name: str, series_list: List[Dict]):
+    # Determine if any series contains non-numeric values
+    convert_to_str = any(
+        isinstance(v, str)
+        for s in series_list
+        for v in s["values"]
+        if v is not None
+    )
+
+    max_len = max(len(s["values"]) for s in series_list)
+    xs = list(range(max_len))
+    ys_dict = {}
+
+    for s in series_list:
+        padded_values = s["values"] + [None] * (max_len - len(s["values"]))
+        if convert_to_str:
+            padded_values = [str(v) if v is not None else None for v in padded_values]
+        ys_dict[f"record_{s['record_id']}"] = padded_values
+
+    try:
+        wandb.log({
+            metric_name: wandb.plot.line_series(
+                xs=xs,
+                ys=[ys for ys in ys_dict.values()],
+                keys=[k for k in ys_dict.keys()],
+                title=metric_name,
+                xname="Step"
+            )
+        })
+    except Exception as e:
+        print(f"Failed to log {metric_name}: {e}")
+
+# def log_grouped_interactive_plot(metric_key: str, series_list: List[Dict]):
+#     max_len = max(len(s["values"]) for s in series_list)
+#     xs = list(range(max_len))
+#     ys_dict = {}
+
+#     for s in series_list:
+#         padded_values = s["values"] + [None] * (max_len - len(s["values"]))
+#         ys_dict[f"record_{s['record_id']}"] = padded_values
+
+#     plot = wandb.plot.line_series(
+#         xs,
+#         [ys for ys in ys_dict.values()],   # y values per record
+#         list(ys_dict.keys()),              # legend: "record_x"
+#         title=f"Grouped {metric_key}",
+#         xname="Step"
+#     )
+
+#     wandb.log({f"{metric_key}_grouped": plot})
+
+
 
 
 def main(
@@ -88,6 +144,13 @@ def main(
         shutil.copyfile(params_path, run_dir / "params.json")
     print(f"Executing {alg_name} with parameters {hparams}")
 
+    wandb.init(
+        project="ROME_sweep_eval",
+        name=f"v_lr_{hparams.v_lr}_v_num_grad_steps_{hparams.v_num_grad_steps}_v_alpha_{hparams.v_alpha}",
+        config=hparams.to_dict(),
+        group=dir_name  # group by sweep folder
+    )
+
     # Instantiate vanilla model
     print("Instantiating model")
     if type(model_name) is str:
@@ -104,6 +167,11 @@ def main(
 
     ds_class, ds_eval_method = DS_DICT[ds_name]
     ds = ds_class(DATA_DIR, size=dataset_size_limit, tok=tok)
+
+################################################################
+    all_loss_curves = {key: [] for key in ["nll_loss", "l1_loss", "total_loss"]}
+    all_delta_curves = {key: [] for key in ["delta_sparsity_count", "delta_sparsity_percentage", "delta_sparsity_ratio_feature_acts", "mean_change"]}
+################################################################
 
     # Iterate through dataset
     for record in ds:
@@ -137,9 +205,36 @@ def main(
                 "time": exec_time,
                 "post": ds_eval_method(edited_model, tok, record, snips, vec),
             }
+            loss_curve = None
+            delta_curve = None
             if isinstance(weights_copy, tuple) and len(weights_copy) == 2:
                 weights_copy, extra_metrics = weights_copy
+                # Remove curve data before updating JSON metrics
+                loss_curve = extra_metrics.pop("loss_curve", None)
+                delta_curve = extra_metrics.pop("delta_curve", None)
                 metrics.update(extra_metrics)
+ 
+
+                if loss_curve:
+                    for key in all_loss_curves:
+                        series = loss_curve[key]
+                        all_loss_curves[key].append({
+                            "record_id": case_id,
+                            "steps": list(range(len(series))),
+                            "values": series
+                        })
+
+                if delta_curve:
+                    for key in all_delta_curves:
+                        series = delta_curve[key]
+                        all_delta_curves[key].append({
+                            "record_id": case_id,
+                            "steps": list(range(len(series))),
+                            "values": series
+                        })
+
+
+
 
             with torch.no_grad():
                 for k, v in weights_copy.items():
@@ -151,6 +246,16 @@ def main(
             # Dump metrics in .json
             with open(case_result_path, "w") as f:
                 json.dump(metrics, f, indent=1)
+    
+    for key, series_list in all_loss_curves.items():
+        log_grouped_line_series(f"loss_curve/{key}", series_list)
+
+    for key, series_list in all_delta_curves.items():
+        log_grouped_line_series(f"delta_curve/{key}", series_list)
+    
+    # log_grouped_interactive_plot("nll_loss", all_loss_curves["nll_loss"])
+
+
 
 
 if __name__ == "__main__":
@@ -226,3 +331,4 @@ if __name__ == "__main__":
         args.conserve_memory,
         dir_name=args.alg_name,
     )
+
