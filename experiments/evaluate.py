@@ -76,27 +76,6 @@ def log_grouped_line_series(metric_name: str, series_list: List[Dict]):
     except Exception as e:
         print(f"Failed to log {metric_name}: {e}")
 
-# def log_grouped_interactive_plot(metric_key: str, series_list: List[Dict]):
-#     max_len = max(len(s["values"]) for s in series_list)
-#     xs = list(range(max_len))
-#     ys_dict = {}
-
-#     for s in series_list:
-#         padded_values = s["values"] + [None] * (max_len - len(s["values"]))
-#         ys_dict[f"record_{s['record_id']}"] = padded_values
-
-#     plot = wandb.plot.line_series(
-#         xs,
-#         [ys for ys in ys_dict.values()],   # y values per record
-#         list(ys_dict.keys()),              # legend: "record_x"
-#         title=f"Grouped {metric_key}",
-#         xname="Step"
-#     )
-
-#     wandb.log({f"{metric_key}_grouped": plot})
-
-
-
 
 def main(
     alg_name: str,
@@ -108,6 +87,7 @@ def main(
     skip_generation_tests: bool,
     conserve_memory: bool,
     dir_name: str,
+    SWEEP_DIR: bool = False,
 ):
     # Set algorithm-specific variables
     params_class, apply_algo = ALG_DICT[alg_name]
@@ -129,7 +109,10 @@ def main(
             run_id = 0 if not id_list else max(id_list) + 1
         else:
             run_id = 0
-        run_dir = RESULTS_DIR / dir_name / f"run_{str(run_id).zfill(3)}"
+        if not SWEEP_DIR:
+            run_dir = RESULTS_DIR / dir_name / f"run_{str(run_id).zfill(3)}"
+        else:
+            run_dir = RESULTS_DIR / dir_name
         run_dir.mkdir(parents=True, exist_ok=True)
     print(f"Results will be stored at {run_dir}")
 
@@ -143,13 +126,6 @@ def main(
     if not (run_dir / "params.json").exists():
         shutil.copyfile(params_path, run_dir / "params.json")
     print(f"Executing {alg_name} with parameters {hparams}")
-
-    wandb.init(
-        project="ROME_sweep_eval",
-        name=f"v_lr_{hparams.v_lr}_v_num_grad_steps_{hparams.v_num_grad_steps}_v_alpha_{hparams.v_alpha}",
-        config=hparams.to_dict(),
-        group=dir_name  # group by sweep folder
-    )
 
     # Instantiate vanilla model
     print("Instantiating model")
@@ -253,8 +229,6 @@ def main(
     for key, series_list in all_delta_curves.items():
         log_grouped_line_series(f"delta_curve/{key}", series_list)
     
-    # log_grouped_interactive_plot("nll_loss", all_loss_curves["nll_loss"])
-
 
 
 
@@ -331,4 +305,3 @@ if __name__ == "__main__":
         args.conserve_memory,
         dir_name=args.alg_name,
     )
-
