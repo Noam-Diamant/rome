@@ -2,6 +2,7 @@ import collections
 import json
 from pprint import pprint
 from typing import List, Optional
+from collections import OrderedDict
 
 import numpy as np
 from scipy.stats import hmean
@@ -40,13 +41,20 @@ def main(
                 break
 
             cur_sum["time"].append(data["time"])
-            # Store custom delta sparsity metrics
-            if "delta_sparsity_count" in data:
-                cur_sum["delta_sparsity_count"].append(data["delta_sparsity_count"])
-            if "delta_sparsity_percentage" in data:
-                cur_sum["delta_sparsity_percentage"].append(data["delta_sparsity_percentage"])
-            if "mean_change" in data and isinstance(data["mean_change"], (int, float)):
-                cur_sum["mean_change"].append(data["mean_change"])
+            # Custom losses and sparsity metrics
+            for key in [
+                "nll_loss",
+                "l1_loss",
+                "total_loss",
+                "delta_sparsity_count",
+                "delta_sparsity_percentage",
+                "mean_change",
+                "delta_sparsity_ratio_feature_acts",
+                "feature_acts_sparsity_count",
+                "feature_acts_sparsity_percentage"
+            ]:
+                if key in data:
+                    cur_sum[key].append(data[key])
 
             for prefix in ["pre", "post"]:
                 # Probability metrics for which new should be lower (better) than true
@@ -150,7 +158,17 @@ def main(
                     break
 
         for k, v in cur_sum.items():
-            if k in ["delta_sparsity_count", "mean_change", "delta_sparsity_percentage"]:
+            if k in [
+            "delta_sparsity_count",
+            "mean_change",
+            "delta_sparsity_percentage",
+            "delta_sparsity_ratio_feature_acts",
+            "feature_acts_sparsity_count",
+            "feature_acts_sparsity_percentage",
+            "l1_loss",
+            "nll_loss",
+            "total_loss"
+            ]:
                 # Don't scale these
                 cur_sum[k] = tuple(np.around(z, 2) for z in v)
                 continue
@@ -158,10 +176,62 @@ def main(
                 # Scale all other non-excluded metrics
                 cur_sum[k] = tuple(np.around(z * 100, 2) for z in v)
 
+        ordered_keys = [
+            "delta_sparsity_count",
+            "delta_sparsity_percentage",
+            "delta_sparsity_ratio_feature_acts",
+            "feature_acts_sparsity_count",
+            "feature_acts_sparsity_percentage",
+            "l1_loss",
+            "mean_change",
+            "nll_loss",
+            "total_loss",
+            "time",
+            "pre_rewrite_success",
+            "pre_rewrite_diff",
+            "pre_paraphrase_success",
+            "pre_paraphrase_diff",
+            "pre_neighborhood_success",
+            "pre_neighborhood_diff",
+            "pre_rewrite_acc",
+            "pre_paraphrase_acc",
+            "pre_neighborhood_acc",
+            "pre_score",
+            "pre_ngram_entropy",
+            "pre_reference_score",
+            "pre_essence_score",
+            "post_rewrite_success",
+            "post_rewrite_diff",
+            "post_paraphrase_success",
+            "post_paraphrase_diff",
+            "post_neighborhood_success",
+            "post_neighborhood_diff",
+            "post_rewrite_acc",
+            "post_paraphrase_acc",
+            "post_neighborhood_acc",
+            "post_score",
+            "post_ngram_entropy",
+            "post_reference_score",
+            "post_essence_score",
+            "num_cases",
+            "run_dir"
+        ]
 
+        # Ensure metadata is added to cur_sum before ordering
         cur_sum.update(metadata)
-        pprint(cur_sum)
+
+        # Order the dictionary for printing
+        ordered_cur_sum = OrderedDict()
+        for key in ordered_keys:
+            if key in cur_sum:
+                ordered_cur_sum[key] = cur_sum[key]
+
+        # Print in ordered form
+        pprint(ordered_cur_sum)
+
+        # Append the original dict (not ordered one) for return
         summaries.append(cur_sum)
+
 
     return uncompressed if get_uncompressed else summaries
 
