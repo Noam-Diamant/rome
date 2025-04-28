@@ -88,6 +88,8 @@ def main(
     conserve_memory: bool,
     dir_name: str,
     SWEEP_DIR: bool = False,
+    start_idx: int = None,
+    end_idx: int = None,
 ):
     # Set algorithm-specific variables
     params_class, apply_algo = ALG_DICT[alg_name]
@@ -143,6 +145,10 @@ def main(
 
     ds_class, ds_eval_method = DS_DICT[ds_name]
     ds = ds_class(DATA_DIR, size=dataset_size_limit, tok=tok)
+    
+    if start_idx is not None or end_idx is not None:
+        print(f"Slicing dataset: start_idx={start_idx}, end_idx={end_idx}")
+        ds = ds[start_idx:end_idx]
 
 ################################################################
     all_loss_curves = {key: [] for key in ["nll_loss", "l1_loss", "total_loss"]}
@@ -223,11 +229,12 @@ def main(
             with open(case_result_path, "w") as f:
                 json.dump(metrics, f, indent=1)
     
-    for key, series_list in all_loss_curves.items():
-        log_grouped_line_series(f"loss_curve/{key}", series_list)
+    if SWEEP_DIR:
+        for key, series_list in all_loss_curves.items():
+            log_grouped_line_series(f"loss_curve/{key}", series_list)
 
-    for key, series_list in all_delta_curves.items():
-        log_grouped_line_series(f"delta_curve/{key}", series_list)
+        for key, series_list in all_delta_curves.items():
+            log_grouped_line_series(f"delta_curve/{key}", series_list)
     
 
 
@@ -278,6 +285,19 @@ if __name__ == "__main__":
         help="Truncate CounterFact to first n records.",
     )
     parser.add_argument(
+        "--start_idx",
+        type=int,
+        default=None,
+        help="Start index for dataset slicing. Inclusive."
+    )
+    parser.add_argument(
+        "--end_idx",
+        type=int,
+        default=None,
+        help="End index for dataset slicing. Exclusive."
+    )
+
+    parser.add_argument(
         "--skip_generation_tests",
         dest="skip_generation_tests",
         action="store_true",
@@ -304,4 +324,6 @@ if __name__ == "__main__":
         args.skip_generation_tests,
         args.conserve_memory,
         dir_name=args.alg_name,
+        start_idx=args.start_idx,
+        end_idx=args.end_idx,
     )
