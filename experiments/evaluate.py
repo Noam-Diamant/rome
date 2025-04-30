@@ -76,6 +76,35 @@ def log_grouped_line_series(metric_name: str, series_list: List[Dict]):
     except Exception as e:
         print(f"Failed to log {metric_name}: {e}")
 
+import numpy as np
+
+def log_mean_curve(metric_name: str, series_list: List[Dict]):
+    if not series_list:
+        return
+
+    # Pad all curves to max_len with None
+    max_len = max(len(s["values"]) for s in series_list)
+    for s in series_list:
+        pad_len = max_len - len(s["values"])
+        #s["values"] += [None] * pad_len
+
+    for i in range(max_len):
+        step_vals = [
+            s["values"][i]
+            for s in series_list
+            if s["values"][i] is not None
+        ]
+        #print(f"[DEBUG] Step {i}: {len(step_vals)} valid values")
+
+        if step_vals:
+            mean = float(np.mean(step_vals))
+            std = float(np.std(step_vals))
+            wandb.log({
+                f"{metric_name}_mean": mean,
+                f"{metric_name}_std": std,
+                "custom_step": i
+            })
+
 
 def main(
     alg_name: str,
@@ -153,6 +182,7 @@ def main(
 ################################################################
     all_loss_curves = {key: [] for key in ["nll_loss", "l1_loss", "total_loss"]}
     all_delta_curves = {key: [] for key in ["delta_sparsity_count", "delta_sparsity_percentage", "delta_sparsity_ratio_feature_acts", "mean_change"]}
+
 ################################################################
 
     # Iterate through dataset
@@ -205,6 +235,8 @@ def main(
                             "steps": list(range(len(series))),
                             "values": series
                         })
+                        #print(f"[DEBUG] Record {case_id}: loss_curve/{key} has {len(loss_curve[key])} steps")
+
 
                 if delta_curve:
                     for key in all_delta_curves:
@@ -214,7 +246,7 @@ def main(
                             "steps": list(range(len(series))),
                             "values": series
                         })
-
+                        #print(f"[DEBUG] Record {case_id}: loss_curve/{key} has {len(delta_curve[key])} steps")
 
 
 
@@ -230,11 +262,21 @@ def main(
                 json.dump(metrics, f, indent=1)
     
     if SWEEP_DIR:
+        wandb.define_metric("custom_step")
+
+        for key in all_loss_curves:
+            wandb.define_metric(f"loss/{key}_mean", step_metric="custom_step")
+            wandb.define_metric(f"loss/{key}_std", step_metric="custom_step")
+
+        for key in all_delta_curves:
+            wandb.define_metric(f"delta/{key}_mean", step_metric="custom_step")
+            wandb.define_metric(f"delta/{key}_std", step_metric="custom_step")
+
         for key, series_list in all_loss_curves.items():
-            log_grouped_line_series(f"loss_curve/{key}", series_list)
+            log_mean_curve(f"loss/{key}", series_list)
 
         for key, series_list in all_delta_curves.items():
-            log_grouped_line_series(f"delta_curve/{key}", series_list)
+            log_mean_curve(f"delta/{key}", series_list)
     
 
 

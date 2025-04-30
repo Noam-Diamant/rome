@@ -4,6 +4,13 @@ from typing import List
 import itertools
 import wandb
 
+import sys
+from pathlib import Path
+
+# Add the 'notebooks' directory to sys.path (one level up from current file)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from experiments.evaluate import ALG_DICT, HPARAMS_DIR
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -14,14 +21,6 @@ TMP_PARAMS_NAME = "sweep_params_tmp_{}_.json"
 
 
 def main(
-    # alg_name: str,
-    # model_name: str,
-    # hparams_fname: str,
-    # sweep_key: str,
-    # sweep_vals: List,
-    # num_records: int,
-    # skip_generation_tests: bool,
-    # parallel_id: str,
     alg_name: str,
     model_name: str,
     hparams_fname: str,
@@ -83,7 +82,7 @@ def main(
 
 if __name__ == "__main__":
     import argparse
-    DEBUG = False
+    DEBUG = True
     # DEBUG = True
     # DEBUG = False
     if DEBUG:
@@ -141,9 +140,6 @@ if __name__ == "__main__":
                 sweep_key in ALG_DICT[args.alg_name][0].KEYS
             ), f"sweep_key {sweep_key} not recognized"
 
-        #Special case to handle layers
-        # if args.sweep_key == "layers":
-        #     args.sweep_vals = [[int(x)] for x in args.sweep_vals]
         for i, key in enumerate(args.sweep_keys):
             if key == "layers":
                 args.sweep_vals_list[i] = [ [int(x)] for x in args.sweep_vals_list[i] ]

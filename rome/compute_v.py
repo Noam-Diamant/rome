@@ -390,8 +390,8 @@ def compute_v_modified(
         # alpha = 0.1
 
         #l1_loss = alpha * torch.nn.functional.l1_loss(delta, torch.zeros_like(delta))
-        l1_loss = alpha * delta.norm(p=1, dim=-1).mean()
-        loss = nll_loss + l1_loss
+        l1_loss = delta.norm(p=1, dim=-1).mean()
+        loss = nll_loss + alpha * l1_loss
         #loss = nll_loss + kl_loss + weight_decay
         # Absolute magnitude of real changes
         abs_changes = applied_delta.abs()
@@ -415,7 +415,7 @@ def compute_v_modified(
         mean_change = (
             abs_changes[non_zero_change_mask].mean().item()
             if delta_sparsity_count > 0
-            else None
+            else 0
         )
         loss_curve["nll_loss"].append(nll_loss.item())
         loss_curve["l1_loss"].append(l1_loss.item())
