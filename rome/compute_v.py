@@ -427,7 +427,7 @@ def compute_v_modified(
 
         print(f"ITERATION {it+1}")
         print(
-            f"loss {np.round(loss.item(), 3)} = {np.round(nll_loss.item(), 3)} + {np.round(l1_loss.item(), 3)}"
+            f"NLL loss: {np.round(nll_loss.item(), 3)}\nL1 Loss: {np.round(l1_loss.item(), 3)}\nalpha: {alpha}\nTotal loss = NLL+alpha*L1: {np.round(loss.item(), 3)}\n"
             f"avg prob of [{request['target_new']['str']}] "
             f"{torch.exp(-nll_loss_each).mean().item()}"
         )
