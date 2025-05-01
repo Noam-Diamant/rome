@@ -105,6 +105,30 @@ def log_mean_curve(metric_name: str, series_list: List[Dict]):
                 "custom_step": i
             })
 
+def compute_mean_std_curves(series_list: List[Dict]) -> Tuple[List[float], List[float]]:
+    """
+    Given a list of dicts with `values` (curves), return mean and std curves across records.
+    """
+    if not series_list:
+        return [], []
+
+    max_len = max(len(s["values"]) for s in series_list)
+    mean_curve, std_curve = [], []
+
+    for i in range(max_len):
+        step_vals = [
+            s["values"][i]
+            for s in series_list
+            if i < len(s["values"]) and s["values"][i] is not None
+        ]
+        if step_vals:
+            mean_curve.append(float(np.mean(step_vals)))
+            std_curve.append(float(np.std(step_vals)))
+        else:
+            mean_curve.append(None)
+            std_curve.append(None)
+
+    return mean_curve, std_curve
 
 def main(
     alg_name: str,
@@ -262,21 +286,24 @@ def main(
                 json.dump(metrics, f, indent=1)
     
     if SWEEP_DIR:
-        wandb.define_metric("custom_step")
+        log_dict_all = {}
+        log_dict = {}
 
         for key in all_loss_curves:
-            wandb.define_metric(f"loss/{key}_mean", step_metric="custom_step")
-            wandb.define_metric(f"loss/{key}_std", step_metric="custom_step")
+            mean_curve, std_curve = compute_mean_std_curves(all_loss_curves[key])
+            log_dict_all[f"loss/mean/{key}"] = mean_curve
+            log_dict_all[f"loss/std/{key}"] = std_curve
 
         for key in all_delta_curves:
-            wandb.define_metric(f"delta/{key}_mean", step_metric="custom_step")
-            wandb.define_metric(f"delta/{key}_std", step_metric="custom_step")
+            mean_curve, std_curve = compute_mean_std_curves(all_delta_curves[key])
+            log_dict_all[f"delta/mean/{key}"] = mean_curve
+            log_dict_all[f"delta/std/{key}"] = std_curve
 
-        for key, series_list in all_loss_curves.items():
-            log_mean_curve(f"loss/{key}", series_list)
+        for i in range(len(log_dict_all[f"loss/mean/l1_loss"])):
+            for key in log_dict_all:
+                log_dict[key] = log_dict_all[key][i]
+            wandb.log(log_dict)
 
-        for key, series_list in all_delta_curves.items():
-            log_mean_curve(f"delta/{key}", series_list)
     
 
 
