@@ -82,7 +82,7 @@ def main(
 
 if __name__ == "__main__":
     import argparse
-    DEBUG = True
+    DEBUG = False
     # DEBUG = True
     # DEBUG = False
     if DEBUG:
