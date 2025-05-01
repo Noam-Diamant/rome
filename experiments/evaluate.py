@@ -43,68 +43,6 @@ DS_DICT = {
     "zsre": (MENDQADataset, compute_rewrite_quality_zsre),
 }
 
-
-def log_grouped_line_series(metric_name: str, series_list: List[Dict]):
-    # Determine if any series contains non-numeric values
-    convert_to_str = any(
-        isinstance(v, str)
-        for s in series_list
-        for v in s["values"]
-        if v is not None
-    )
-
-    max_len = max(len(s["values"]) for s in series_list)
-    xs = list(range(max_len))
-    ys_dict = {}
-
-    for s in series_list:
-        padded_values = s["values"] + [None] * (max_len - len(s["values"]))
-        if convert_to_str:
-            padded_values = [str(v) if v is not None else None for v in padded_values]
-        ys_dict[f"record_{s['record_id']}"] = padded_values
-
-    try:
-        wandb.log({
-            metric_name: wandb.plot.line_series(
-                xs=xs,
-                ys=[ys for ys in ys_dict.values()],
-                keys=[k for k in ys_dict.keys()],
-                title=metric_name,
-                xname="Step"
-            )
-        })
-    except Exception as e:
-        print(f"Failed to log {metric_name}: {e}")
-
-import numpy as np
-
-def log_mean_curve(metric_name: str, series_list: List[Dict]):
-    if not series_list:
-        return
-
-    # Pad all curves to max_len with None
-    max_len = max(len(s["values"]) for s in series_list)
-    for s in series_list:
-        pad_len = max_len - len(s["values"])
-        #s["values"] += [None] * pad_len
-
-    for i in range(max_len):
-        step_vals = [
-            s["values"][i]
-            for s in series_list
-            if s["values"][i] is not None
-        ]
-        #print(f"[DEBUG] Step {i}: {len(step_vals)} valid values")
-
-        if step_vals:
-            mean = float(np.mean(step_vals))
-            std = float(np.std(step_vals))
-            wandb.log({
-                f"{metric_name}_mean": mean,
-                f"{metric_name}_std": std,
-                "custom_step": i
-            })
-
 def compute_mean_std_curves(series_list: List[Dict]) -> Tuple[List[float], List[float]]:
     """
     Given a list of dicts with `values` (curves), return mean and std curves across records.
