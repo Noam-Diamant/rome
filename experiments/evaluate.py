@@ -260,7 +260,7 @@ if __name__ == "__main__":
             model_name="gpt2-xl",
             hparams_fname="gpt2-xl.json",
             ds_name="cf",
-            dataset_size_limit=10000,
+            dataset_size_limit=2,
             continue_from_run=None,
             skip_generation_tests=True,
             conserve_memory=False,
@@ -268,6 +268,7 @@ if __name__ == "__main__":
             start_idx=None,
             end_idx=None,
         )
+
     else:
         parser = argparse.ArgumentParser()
         parser.add_argument(

@@ -350,18 +350,6 @@ def compute_v_modified(
         ) as tr:
             logits = model(**input_tok).logits
 
-            # Compute distribution for KL divergence
-            kl_logits = torch.stack(
-                [
-                    logits[i - len(kl_prompts), idx, :]
-                    for i, idx in enumerate(lookup_idxs[-len(kl_prompts) :])
-                ],
-                dim=0,
-            )
-            kl_log_probs = torch.nn.functional.log_softmax(kl_logits, dim=1)
-            if kl_distr_init is None:
-                kl_distr_init = kl_log_probs.detach().clone()
-
         # Compute loss on rewriting targets
         log_probs = torch.log_softmax(logits, dim=2)
 
@@ -375,24 +363,11 @@ def compute_v_modified(
         # Aggregate total losses
         nll_loss_each = -(loss * mask).sum(1) / target_ids.size(0)
         nll_loss = nll_loss_each.mean()
-        kl_loss = hparams.kl_factor * torch.nn.functional.kl_div(
-            kl_distr_init, kl_log_probs, log_target=True, reduction="batchmean"
-        )
-        weight_decay = hparams.v_weight_decay * (
-            torch.norm(delta) / torch.norm(target_init) ** 2
-        )
-        # weight_decay = hparams.v_weight_decay * torch.norm(delta) ** 2
-        alpha = hparams.v_alpha#0.000001
-        # alpha = 0.00001
-        # alpha = 0.0001
-        # alpha = 0.001
-        # alpha = 0.01
-        # alpha = 0.1
 
-        #l1_loss = alpha * torch.nn.functional.l1_loss(delta, torch.zeros_like(delta))
+        alpha = hparams.v_alpha
         l1_loss = delta.norm(p=1, dim=-1).mean()
         loss = nll_loss + alpha * l1_loss
-        #loss = nll_loss + kl_loss + weight_decay
+
         # Absolute magnitude of real changes
         abs_changes = applied_delta.abs()
 
@@ -494,7 +469,7 @@ def compute_v_modified(
         "delta_curve": delta_curve,
         "loss_curve": loss_curve,
     }
-    del loss, logits, kl_logits, log_probs, rewriting_targets, delta
+    del loss, logits, log_probs, rewriting_targets, delta
     kl_distr_init = None
     target_init = None
     diff = None
@@ -504,12 +479,6 @@ def compute_v_modified(
     return right_vector, right_vector_metadata
 ######################################################################################################################################################
 
-
-######################################################################################################################################################
-######################################################################################################################################################
-######################################################################################################################################################
-######################################################################################################################################################
-######################################################################################################################################################
 
 def get_module_input_output_at_word(
     model: AutoModelForCausalLM,
