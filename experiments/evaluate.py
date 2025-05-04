@@ -247,90 +247,110 @@ def main(
 
 
 if __name__ == "__main__":
+
     import argparse
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--alg_name",
-        choices=["ROME", "FT", "KN", "MEND", "KE", "ROME_MODIFIED"],
-        default="ROME",
-        help="Editing algorithm to use. Results are saved in results/<alg_name>/<run_id>, "
-        "where a new run_id is generated on each run. "
-        "If continuing from previous run, specify the run_id in --continue_from_run.",
-        required=True,
-    )
-    parser.add_argument(
-        "--model_name",
-        choices=["gpt2-medium", "gpt2-large", "gpt2-xl", "EleutherAI/gpt-j-6B", "Qwen/Qwen2-0.5B"],
-        default="gpt2-xl",
-        help="Model to edit.",
-        required=True,
-    )
-    parser.add_argument(
-        "--hparams_fname",
-        type=str,
-        default="gpt2-xl.json",
-        help="Name of hyperparameters file, located in the hparams/<alg_name> folder.",
-        required=True,
-    )
-    parser.add_argument(
-        "--ds_name",
-        choices=["cf", "zsre"],
-        default="cf",
-        help="Dataset to perform evaluations on. Either CounterFact (cf) or zsRE (zsre).",
-    )
-    parser.add_argument(
-        "--continue_from_run",
-        type=str,
-        default=None,
-        help="If continuing from previous run, set to run_id. Otherwise, leave as None.",
-    )
-    parser.add_argument(
-        "--dataset_size_limit",
-        type=int,
-        default=10000,
-        help="Truncate CounterFact to first n records.",
-    )
-    parser.add_argument(
-        "--start_idx",
-        type=int,
-        default=None,
-        help="Start index for dataset slicing. Inclusive."
-    )
-    parser.add_argument(
-        "--end_idx",
-        type=int,
-        default=None,
-        help="End index for dataset slicing. Exclusive."
-    )
+    DEBUG = True
+    # DEBUG = True
+    # DEBUG = False
+    if DEBUG:
+        # MANUALLY define the args here
+        main(
+            alg_name="ROME_MODIFIED",
+            model_name="gpt2-xl",
+            hparams_fname="gpt2-xl.json",
+            ds_name="cf",
+            dataset_size_limit=10000,
+            continue_from_run=None,
+            skip_generation_tests=True,
+            conserve_memory=False,
+            dir_name="ROME_MODIFIED",
+            start_idx=None,
+            end_idx=None,
+        )
+    else:
+        parser = argparse.ArgumentParser()
+        parser.add_argument(
+            "--alg_name",
+            choices=["ROME", "FT", "KN", "MEND", "KE", "ROME_MODIFIED"],
+            default="ROME",
+            help="Editing algorithm to use. Results are saved in results/<alg_name>/<run_id>, "
+            "where a new run_id is generated on each run. "
+            "If continuing from previous run, specify the run_id in --continue_from_run.",
+            required=True,
+        )
+        parser.add_argument(
+            "--model_name",
+            choices=["gpt2-medium", "gpt2-large", "gpt2-xl", "EleutherAI/gpt-j-6B", "Qwen/Qwen2-0.5B"],
+            default="gpt2-xl",
+            help="Model to edit.",
+            required=True,
+        )
+        parser.add_argument(
+            "--hparams_fname",
+            type=str,
+            default="gpt2-xl.json",
+            help="Name of hyperparameters file, located in the hparams/<alg_name> folder.",
+            required=True,
+        )
+        parser.add_argument(
+            "--ds_name",
+            choices=["cf", "zsre"],
+            default="cf",
+            help="Dataset to perform evaluations on. Either CounterFact (cf) or zsRE (zsre).",
+        )
+        parser.add_argument(
+            "--continue_from_run",
+            type=str,
+            default=None,
+            help="If continuing from previous run, set to run_id. Otherwise, leave as None.",
+        )
+        parser.add_argument(
+            "--dataset_size_limit",
+            type=int,
+            default=10000,
+            help="Truncate CounterFact to first n records.",
+        )
+        parser.add_argument(
+            "--start_idx",
+            type=int,
+            default=None,
+            help="Start index for dataset slicing. Inclusive."
+        )
+        parser.add_argument(
+            "--end_idx",
+            type=int,
+            default=None,
+            help="End index for dataset slicing. Exclusive."
+        )
 
-    parser.add_argument(
-        "--skip_generation_tests",
-        dest="skip_generation_tests",
-        action="store_true",
-        help="Only run fast probability-based tests without slow generation tests. "
-        "Useful for quick debugging and hyperparameter sweeps.",
-    )
-    parser.add_argument(
-        "--conserve_memory",
-        dest="conserve_memory",
-        action="store_true",
-        help="Reduce memory usage during evaluation at the cost of a minor slowdown. "
-        "Backs up model weights on CPU instead of GPU.",
-    )
-    parser.set_defaults(skip_generation_tests=False, conserve_memory=False)
-    args = parser.parse_args()
+        parser.add_argument(
+            "--skip_generation_tests",
+            dest="skip_generation_tests",
+            action="store_true",
+            help="Only run fast probability-based tests without slow generation tests. "
+            "Useful for quick debugging and hyperparameter sweeps.",
+        )
+        parser.add_argument(
+            "--conserve_memory",
+            dest="conserve_memory",
+            action="store_true",
+            help="Reduce memory usage during evaluation at the cost of a minor slowdown. "
+            "Backs up model weights on CPU instead of GPU.",
+        )
+        parser.set_defaults(skip_generation_tests=False, conserve_memory=False)
+        args = parser.parse_args()
 
-    main(
-        args.alg_name,
-        args.model_name,
-        args.hparams_fname,
-        args.ds_name,
-        args.dataset_size_limit,
-        args.continue_from_run,
-        args.skip_generation_tests,
-        args.conserve_memory,
-        dir_name=args.alg_name,
-        start_idx=args.start_idx,
-        end_idx=args.end_idx,
-    )
+        main(
+            args.alg_name,
+            args.model_name,
+            args.hparams_fname,
+            args.ds_name,
+            args.dataset_size_limit,
+            args.continue_from_run,
+            args.skip_generation_tests,
+            args.conserve_memory,
+            dir_name=args.alg_name,
+            start_idx=args.start_idx,
+            end_idx=args.end_idx,
+        )
