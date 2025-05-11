@@ -242,6 +242,7 @@ def compute_v_modified(
     print("Computing right vector (v)")
 
     # Tokenize target into list of int token IDs
+    target_str = request["target_new"]["str"]
     target_ids = tok(request["target_new"]["str"], return_tensors="pt").to("cuda")[
         "input_ids"
     ][0]
@@ -251,8 +252,9 @@ def compute_v_modified(
         context.format(request["prompt"]) + tok.decode(target_ids[:-1])
         for context in context_templates
     ], ["{} is a"]
-    all_prompts = rewriting_prompts + kl_prompts
+    all_prompts = rewriting_prompts# + kl_prompts
 
+    all_prompts_modified = [prompt.format(request["subject"]) for prompt in all_prompts]
     input_tok = tok(
         [prompt.format(request["subject"]) for prompt in all_prompts],
         return_tensors="pt",
@@ -270,7 +272,7 @@ def compute_v_modified(
     # Compute indices of the tokens where the fact is looked up
     lookup_idxs = [
         find_fact_lookup_idx(
-            prompt, request["subject"], tok, hparams.fact_token, verbose=(i == 0)
+            prompt, request["subject"], tok, hparams.fact_token, verbose=True#(i == 0)
         )
         for i, prompt in enumerate(all_prompts)
     ]
@@ -320,7 +322,7 @@ def compute_v_modified(
                 feature_acts_sparsity_count = non_zero_change_mask_feature_acts.sum().item()   
                 sum_feature_acts_sparsity_count += feature_acts_sparsity_count 
                 new_feature_acts = feature_acts + delta
-                if do_clamp: ######
+                if do_clamp: 
                     new_feature_acts = F.relu(new_feature_acts)#torch.clamp(new_feature_acts, min = 0.0) #clamp at zereo to preserve the SAE behaviour
                 applied_delta = new_feature_acts - feature_acts
                 sae_out = sae.decode(new_feature_acts) + diff

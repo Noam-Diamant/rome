@@ -10,6 +10,7 @@ from tqdm import tqdm
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import nltk
+import numpy as np
 
 
 # from baselines.efk import EFKHyperParams, EfkRewriteExecutor
