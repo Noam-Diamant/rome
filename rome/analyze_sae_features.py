@@ -6,6 +6,78 @@ from sae_lens import SAE
 from util import nethook
 from .rome_hparams import ROMEHyperParams, ROMEMODIFIEDHyperParams
 from .compute_v import find_fact_lookup_idx
+import json
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+
+def plot_feature_activation_distribution(all_template_activations: List[torch.Tensor],
+                                      context_templates: List[str],
+                                      save_dir: str):
+    """
+    Plot histogram distribution of non-zero feature activations for each context template.
+    
+    Args:
+        all_template_activations: List of activation tensors for each template
+        context_templates: List of template strings
+        save_dir: Directory to save the plots
+    """
+    for i, activations in enumerate(all_template_activations):
+        plt.figure(figsize=(10, 6))
+        
+        # Get non-zero activations
+        active_vals = activations[activations > 0].cpu().numpy()
+        if len(active_vals) == 0:
+            plt.close()
+            continue
+        
+        # Create histogram
+        plt.hist(active_vals, bins=50, alpha=0.75, density=True)
+        plt.xlabel('Activation Value')
+        plt.ylabel('Density')
+        plt.title(f'Distribution of Active Feature Activations - Template {i+1}')
+        plt.grid(True)
+        
+        # Save plot
+        plt.savefig(os.path.join(save_dir, f'template_{i+1}_distribution.png'), bbox_inches='tight')
+        plt.close()
+
+def plot_feature_activation_cdf(all_template_activations: List[torch.Tensor], 
+                              context_templates: List[str],
+                              save_path: str = None):
+    """
+    Plot CDF of non-zero feature activations for each context template.
+    
+    Args:
+        all_template_activations: List of activation tensors for each template
+        context_templates: List of template strings
+        save_path: Optional path to save the plot
+    """
+    plt.figure(figsize=(12, 8))
+    
+    for i, activations in enumerate(all_template_activations):
+        # Get non-zero activations
+        active_vals = activations[activations > 0].cpu().numpy()
+        if len(active_vals) == 0:
+            continue
+            
+        # Sort values for CDF
+        sorted_vals = np.sort(active_vals)
+        # Calculate cumulative probabilities
+        p = np.arange(1, len(sorted_vals) + 1) / len(sorted_vals)
+        
+        # Plot CDF
+        plt.plot(sorted_vals, p, label=f'Template {i+1}')
+    
+    plt.xlabel('Activation Value')
+    plt.ylabel('CDF')
+    plt.title('CDF of Active Feature Activations by Template')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.grid(True)
+    
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
+    plt.close()
 
 def analyze_sae_features(
     model: AutoModelForCausalLM,
@@ -13,6 +85,10 @@ def analyze_sae_features(
     request: Dict,
     hparams: ROMEMODIFIEDHyperParams,
     context_templates: List[str],
+    plot_save_dir: Dict[str, str] = None,
+    save_cdf: bool = True,
+    save_dist: bool = True,
+    record_idx: int = None,
 ) -> Dict:
     """
     Analyzes the active SAE features in lookup sentences used for training the new v activation vector.
@@ -23,13 +99,17 @@ def analyze_sae_features(
         request: The editing request containing prompt and target information
         hparams: Hyperparameters for the editing process
         context_templates: List of context templates used for generating prompts
+        plot_save_dir: Dictionary with 'cdf' and 'dist' keys containing paths for saving plots
+        save_cdf: Whether to save CDF plots
+        save_dist: Whether to save distribution plots
+        record_idx: Index of the record in the dataset for naming the plots
         
     Returns:
         Dictionary containing analysis of SAE features including:
-        - Active features per sentence (for rewriting prompts)
-        - Feature activation statistics
         - Common features across sentences
-        - Feature activation patterns
+        - Context template activations
+        - For each template: mean activation, std, top 10 feature values and indices
+        - Feature count statistics
     """
     # Load appropriate SAE model based on the base model
     if model.config._name_or_path == 'Qwen/Qwen2-0.5B':
@@ -68,17 +148,17 @@ def analyze_sae_features(
     # Get lookup indices
     lookup_idxs = [
         find_fact_lookup_idx(
-            prompt, request["subject"], tok, hparams.fact_token, verbose=(i == 0)
+            prompt, request["subject"], tok, hparams.fact_token, verbose=False
         )
         for i, prompt in enumerate(all_prompts)
     ]
 
     # Initialize storage for analysis
     feature_analysis = {
-        "rewriting_features": [],  # Features from rewriting prompts
-        "common_features": None,
-        "feature_statistics": {},
-        "activation_patterns": []
+        "common_features": [],
+        "context_activations": [],
+        "template_statistics": [],
+        "feature_statistics": {}
     }
 
     # Analyze features for each sentence
@@ -93,6 +173,11 @@ def analyze_sae_features(
                 _ = model(**input_tok)
                 mlp_out = trace.output
 
+            # Store all feature activations for each template
+            all_template_activations = []
+            all_active_features = []
+            template_feature_counts = []  # New: store count of active features per template
+
             # Analyze features for each sentence
             for i, idx in enumerate(lookup_idxs):
                 # Get activations at lookup index
@@ -100,52 +185,76 @@ def analyze_sae_features(
                 
                 # Encode with SAE
                 feature_acts = sae.encode(activations)
-                
-                # Find active features (threshold > 1e-6 as in compute_v_modified)
-                active_features = torch.where(feature_acts > 1e-6)[0]
-                feature_values = feature_acts[active_features]
-                
-                # Store analysis for this sentence
-                sentence_analysis = {
-                    "sentence": all_prompts[i].format(request["subject"]),
-                    "lookup_token": tok.decode(input_tok["input_ids"][i, idx]),
-                    "num_active_features": len(active_features),
-                    "active_feature_indices": active_features.cpu().tolist(),
-                    "feature_activation_values": feature_values.cpu().tolist(),
-                }
-                
-                feature_analysis["rewriting_features"].append(sentence_analysis)
 
-            # Analyze rewriting prompts features
-            rewriting_active_sets = [set(analysis["active_feature_indices"]) 
-                                   for analysis in feature_analysis["rewriting_features"]]
-            rewriting_common = set.intersection(*rewriting_active_sets) if rewriting_active_sets else set()
+                # Get total number of features
+                total_features = feature_acts.shape[0]
+                
+                # Find active features (threshold > 0 as in compute_v_modified)
+                active_features = torch.where(feature_acts > 0)[0]
+                n_active = len(active_features)
+                template_feature_counts.append({
+                    "template_idx": i,
+                    "n_active_features": n_active,
+                    "percent_active": (n_active / total_features) * 100
+                })
+                
+                all_active_features.append(set(active_features.cpu().tolist()))
+                all_template_activations.append(feature_acts)
 
-            # Find common features across all prompts
-            feature_analysis["common_features"] = list(rewriting_common)
+            # Find common features across all templates
+            common_features = list(set.intersection(*all_active_features))
+            feature_analysis["common_features"] = common_features
 
-            # Compute feature statistics
-            all_active_features = []
-            for analysis in feature_analysis["rewriting_features"]:
-                all_active_features.extend(analysis["active_feature_indices"])
-            
-            from collections import Counter
-            feature_counts = Counter(all_active_features)
-            
+            # Add feature count statistics
             feature_analysis["feature_statistics"] = {
-                "total_unique_features": len(set(all_active_features)),
-                "feature_frequency": feature_counts,
-                "most_common_features": feature_counts.most_common(10),
-                "rewriting_unique_features": len(set(all_active_features))
+                "total_features": total_features,
+                "common_features_count": len(common_features),
+                "common_features_percentage": (len(common_features) / total_features) * 100,
+                "template_feature_counts": template_feature_counts
             }
 
-            # Analyze activation patterns
-            all_analyses = feature_analysis["rewriting_features"]
-            feature_analysis["activation_patterns"] = {
-                "min_active_features": min(len(analysis["active_feature_indices"]) for analysis in all_analyses),
-                "max_active_features": max(len(analysis["active_feature_indices"]) for analysis in all_analyses),
-                "avg_active_features": sum(len(analysis["active_feature_indices"]) for analysis in all_analyses) / len(all_analyses),
-                "rewriting_avg_features": sum(len(analysis["active_feature_indices"]) for analysis in feature_analysis["rewriting_features"]) / len(feature_analysis["rewriting_features"])
-            }
+            # Generate plots if directory provided
+            if plot_save_dir:
+                # Save CDF plot
+                if save_cdf and 'cdf' in plot_save_dir:
+                    subject = request["subject"].replace(' ', '_')[:30]
+                    cdf_path = os.path.join(plot_save_dir['cdf'], f"template_cdf_example_{record_idx}_subject_{subject}.png")
+                    plot_feature_activation_cdf(all_template_activations, context_templates, cdf_path)
+                
+                # Save distribution plots
+                if save_dist and 'dist' in plot_save_dir:
+                    plot_feature_activation_distribution(all_template_activations, context_templates, plot_save_dir['dist'])
+
+            # Store all template activations
+            feature_analysis["context_activations"] = all_template_activations
+
+            # Compute statistics for each template
+            for i, template_activations in enumerate(all_template_activations):
+                # Get activations for positive features only
+                pos_activations = template_activations[common_features]
+                
+                # Calculate statistics
+                mean_activation = pos_activations.mean().item()
+                # Handle std calculation with edge cases
+                if len(pos_activations) > 1:
+                    std_activation = pos_activations.std().item()
+                else:
+                    std_activation = 0.0  # or float('nan') if you prefer
+                
+                # Get top 10 values and indices
+                top_k = min(10, len(pos_activations))
+                top_values, top_indices = torch.topk(pos_activations, k=top_k)
+                
+                # Store template statistics
+                template_stats = {
+                    "template_idx": i,
+                    "template_text": context_templates[i],
+                    "mean_activation": mean_activation,
+                    "std_activation": std_activation,
+                    "num_active_features": len(pos_activations),  # Added this for clarity
+                    "top_values": top_values.cpu().tolist(),
+                    "top_feature_indices": [common_features[idx] for idx in top_indices.cpu().tolist()]
+                }
+                feature_analysis["template_statistics"].append(template_stats)
 
     return feature_analysis 
