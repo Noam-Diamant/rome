@@ -21,6 +21,45 @@ from util.globals import DATA_DIR
 from rome.rome_main import get_context_templates, sanitize_templates
 
 def parse_args():
+    """
+    Parse command line arguments for the SAE feature analysis script.
+
+    Arguments:
+        --model: The language model to analyze. Currently supports:
+            - 'gpt2-xl': GPT2-XL model
+            - 'Qwen/Qwen2-0.5B': Qwen2 0.5B parameter model
+        
+        --num-examples: Number of random examples to analyze from the CounterFact dataset
+        
+        Display Options:
+        --show-templates: Show the context templates used for generating prompts
+        --show-example-info: Display information about each example being analyzed:
+            - Subject being edited
+            - Prompt template
+            - Target output
+        --show-feature-stats: Show statistics about SAE features:
+            - Total number of features
+            - Number and percentage of common features
+            - Feature counts per template
+        --show-template-stats: Show detailed statistics for each template:
+            - Mean and std of activations
+            - Number of active features
+            - Top 10 feature activations
+        
+        Plot Options:
+        --save-cdf: Save Cumulative Distribution Function plots showing how feature
+                   activations are distributed across templates
+        --save-dist: Save distribution plots (histograms) showing activation patterns
+                    for each template separately
+        --save-all-plots: Enable both CDF and distribution plots
+        
+        Output Control:
+        --quiet: Minimize output, showing only errors and critical information.
+                Also suppresses underlying library prints.
+
+    Returns:
+        argparse.Namespace: Parsed command-line arguments
+    """
     parser = argparse.ArgumentParser(description='Analyze SAE features with various output options')
     
     # Model and example count arguments
