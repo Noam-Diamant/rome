@@ -317,7 +317,7 @@ def compute_v_modified(
             for i, idx in enumerate(lookup_idxs):
                 residual_vector = cur_out[i, idx, :].clone()                 
                 feature_acts = sae.encode(residual_vector).detach()
-                non_zero_change_mask_feature_acts = feature_acts > 1e-6
+                non_zero_change_mask_feature_acts = feature_acts > 0
                 # Count how many features were actually changed in the feature space
                 feature_acts_sparsity_count = non_zero_change_mask_feature_acts.sum().item()   
                 sum_feature_acts_sparsity_count += feature_acts_sparsity_count 
@@ -374,7 +374,7 @@ def compute_v_modified(
         abs_changes = applied_delta.abs()
 
         # Mask for non-zero changes (with epsilon for float safety)
-        non_zero_change_mask = abs_changes > 1e-6
+        non_zero_change_mask = abs_changes > 0
 
         # Count how many features were actually changed
         delta_sparsity_count = non_zero_change_mask.sum().item()
