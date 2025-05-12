@@ -12,12 +12,13 @@ REMOTE_URL = f"{REMOTE_ROOT_URL}/data/dsets/counterfact.json"
 
 class CounterFactDataset(Dataset):
     def __init__(
-        self, data_dir: str, size: typing.Optional[int] = None, *args, **kwargs
+        self, data_dir: str, size: typing.Optional[int] = None, quiet: bool = False, *args, **kwargs
     ):
         data_dir = Path(data_dir)
         cf_loc = data_dir / "counterfact.json"
         if not cf_loc.exists():
-            print(f"{cf_loc} does not exist. Downloading from {REMOTE_URL}")
+            if not quiet:
+                print(f"{cf_loc} does not exist. Downloading from {REMOTE_URL}")
             data_dir.mkdir(exist_ok=True, parents=True)
             torch.hub.download_url_to_file(REMOTE_URL, cf_loc)
 
@@ -26,7 +27,8 @@ class CounterFactDataset(Dataset):
         if size is not None:
             self.data = self.data[:size]
 
-        print(f"Loaded dataset with {len(self)} elements")
+        if not quiet:
+            print(f"Loaded dataset with {len(self)} elements")
 
     def __len__(self):
         return len(self.data)

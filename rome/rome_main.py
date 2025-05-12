@@ -151,7 +151,7 @@ def upd_matrix_match_shape(matrix: torch.Tensor, shape: torch.Size) -> torch.Ten
         )
 
 
-def get_context_templates(model, tok, length_params):
+def get_context_templates(model, tok, length_params, quiet: bool = False):
     global CONTEXT_TEMPLATES_CACHE
 
     if CONTEXT_TEMPLATES_CACHE is None:
@@ -172,7 +172,8 @@ def get_context_templates(model, tok, length_params):
             )
         ]
 
-        print(f"Cached context templates {CONTEXT_TEMPLATES_CACHE}")
+        if not quiet:
+            print(f"Cached context templates {CONTEXT_TEMPLATES_CACHE}")
 
     return CONTEXT_TEMPLATES_CACHE
 
