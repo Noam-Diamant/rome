@@ -7,18 +7,78 @@ import argparse
 import warnings
 from pathlib import Path
 from datetime import datetime
+import matplotlib.pyplot as plt
+import numpy as np
+from tqdm import tqdm
 
 # Add project root to Python path
 project_root = str(Path(__file__).parent.parent)
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 from rome.rome_hparams import ROMEMODIFIEDHyperParams
 from rome.analyze_sae_features import analyze_sae_features
 from dsets import CounterFactDataset
 from util.globals import DATA_DIR
 from rome.rome_main import get_context_templates, sanitize_templates
+
+def get_num_layers(model_name: str) -> int:
+    """Get the number of transformer blocks/layers from a model."""
+    config = AutoConfig.from_pretrained(model_name)
+    
+    if hasattr(config, 'num_hidden_layers'):
+        return config.num_hidden_layers
+    elif hasattr(config, 'n_layer'):
+        return config.n_layer
+    elif hasattr(config, 'num_layers'):
+        return config.num_layers
+    else:
+        raise AttributeError(f"Could not find number of layers in config for {model_name}")
+
+def plot_layer_percentages(layer_stats: list, model_name: str, timestamp: str, save_dir: str, example_idx: int = None):
+    """
+    Create a bar plot showing feature percentages across layers.
+    
+    Args:
+        layer_stats: List of dictionaries containing statistics for each layer
+        model_name: Name of the model being analyzed
+        timestamp: Timestamp for saving the plot
+        save_dir: Directory to save the plot
+        example_idx: If provided, indicates this is for a specific example
+    """
+    layers = np.arange(len(layer_stats))
+    common_percentages = [stats['common_features_percentage'] for stats in layer_stats]
+    pairwise_percentages = [stats['average_pairwise_common_percentage'] for stats in layer_stats]
+    
+    plt.figure(figsize=(12, 6))
+    bar_width = 0.35
+    
+    plt.bar(layers - bar_width/2, common_percentages, bar_width, 
+            label='Common Features Across All Templates', color='green', alpha=0.7)
+    plt.bar(layers + bar_width/2, pairwise_percentages, bar_width,
+            label='Average Pairwise Common Features', color='red', alpha=0.7)
+    
+    plt.xlabel('Layer Number')
+    plt.ylabel('Percentage of Features (%)')
+    title = f'Feature Commonality Across Layers - {model_name}'
+    if example_idx is not None:
+        title += f' - Example {example_idx}'
+    plt.title(title)
+    plt.xticks(layers)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # Save plot
+    filename = 'layer_percentages'
+    if example_idx is not None:
+        filename += f'_example_{example_idx}'
+    filename += f'_{model_name.replace("/", "_")}_{timestamp}.png'
+    plot_path = os.path.join(save_dir, filename)
+    plt.savefig(plot_path, bbox_inches='tight')
+    plt.close()
+    
+    return plot_path
 
 def parse_args():
     """
@@ -53,9 +113,14 @@ def parse_args():
                     for each template separately
         --save-all-plots: Enable both CDF and distribution plots
         
+        Layer Analysis Options:
+        --analyze-layers: Perform layer-wise analysis
+        --per-example-layer-plots: Generate layer plots for each example
+        --average-layer-plot: Generate averaged layer plot across all examples
+        
         Output Control:
-        --quiet: Minimize output, showing only errors and critical information.
-                Also suppresses underlying library prints.
+        --verbose: Show additional information and progress messages.
+                Default is quiet mode with minimal output.
 
     Returns:
         argparse.Namespace: Parsed command-line arguments
@@ -78,6 +143,8 @@ def parse_args():
                       help='Show feature statistics')
     parser.add_argument('--show-template-stats', action='store_true',
                       help='Show detailed template statistics')
+    parser.add_argument('--show-pairwise-stats', action='store_true',
+                      help='Show detailed pairwise template statistics')
     
     # Plot options
     plot_group = parser.add_argument_group('Plot Options')
@@ -88,9 +155,18 @@ def parse_args():
     plot_group.add_argument('--save-all-plots', action='store_true',
                          help='Save both CDF and distribution plots')
     
+    # Layer analysis options
+    layer_group = parser.add_argument_group('Layer Analysis Options')
+    layer_group.add_argument('--analyze-layers', action='store_true',
+                          help='Perform layer-wise analysis')
+    layer_group.add_argument('--per-example-layer-plots', action='store_true',
+                          help='Generate layer plots for each example')
+    layer_group.add_argument('--average-layer-plot', action='store_true',
+                          help='Generate averaged layer plot across all examples')
+    
     # Output control
-    parser.add_argument('--quiet', action='store_true',
-                      help='Minimal output, only errors and critical info')
+    parser.add_argument('--verbose', action='store_true',
+                      help='Show additional information and progress messages')
     
     args = parser.parse_args()
     
@@ -104,12 +180,8 @@ def parse_args():
 def main():
     args = parse_args()
     
-    # Determine if we're in quiet mode
-    only_plotting = all(not getattr(args, attr) for attr in [
-        'show_templates', 'show_example_info', 
-        'show_feature_stats', 'show_template_stats'
-    ])
-    quiet_mode = args.quiet or only_plotting
+    # Determine if we're in quiet mode - default is True unless verbose is set
+    quiet_mode = not args.verbose
 
     # Initialize model and tokenizer
     model = AutoModelForCausalLM.from_pretrained(args.model, output_loading_info=False).to("cuda" if torch.cuda.is_available() else "cpu")
@@ -121,13 +193,11 @@ def main():
         model.config.n_positions = model.config.max_position_embeddings 
         model.config.n_embd = model.config.hidden_size
 
-    # Load CounterFact dataset
-    dataset = CounterFactDataset(DATA_DIR, quiet=quiet_mode)
-    if not quiet_mode:
-        #print(f"Loaded {len(dataset)} examples from CounterFact dataset")
-        pass
+    # Get number of layers if needed
+    num_layers = get_num_layers(args.model) if (args.analyze_layers or args.per_example_layer_plots or args.average_layer_plot) else None
 
-    # Load and initialize hyperparameters
+    # Load dataset and hyperparameters
+    dataset = CounterFactDataset(DATA_DIR, quiet=quiet_mode)
     if args.model == "Qwen/Qwen2-0.5B":
         hparams_file = os.path.join(project_root, "hparams/ROME_MODIFIED/Qwen_Qwen2-0.5B.json")
     else:  # gpt2-xl
@@ -135,108 +205,178 @@ def main():
 
     with open(hparams_file, "r") as f:
         hparams_dict = json.load(f)
-    hparams = ROMEMODIFIEDHyperParams(**hparams_dict)
 
-    # Create organized results directory structure if any plots are to be saved
+    # Create timestamp and base directory name for this analysis run
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_timestamp_dir = f"{args.model.replace('/', '_')}_{timestamp}"
+    
+    # Setup directories
     should_save_plots = args.save_cdf or args.save_dist
+    
+    # Create base directories for plots if needed
     if should_save_plots:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        model_timestamp_dir = f"{args.model.replace('/', '_')}_{timestamp}"
-        
         if args.save_cdf:
             cdf_dir = os.path.join(project_root, "results", "feature_analysis", "template_cdf_plots", model_timestamp_dir)
             os.makedirs(cdf_dir, exist_ok=True)
         if args.save_dist:
             dist_dir = os.path.join(project_root, "results", "feature_analysis", "distribution_plots", model_timestamp_dir)
             os.makedirs(dist_dir, exist_ok=True)
-        
-        # Save analysis parameters in both directories if they exist
-        params_text = f"Model: {args.model}\nAnalysis timestamp: {timestamp}\nNumber of examples: {args.num_examples}\n"
-        params_text += f"Plot types: {'CDF ' if args.save_cdf else ''}{'Distribution ' if args.save_dist else ''}\n"
-        
-        if args.save_cdf:
-            with open(os.path.join(cdf_dir, "analysis_params.txt"), "w") as f:
-                f.write(params_text)
-        if args.save_dist:
-            with open(os.path.join(dist_dir, "analysis_params.txt"), "w") as f:
-                f.write(params_text)
+    
+    # Create layer analysis directory if needed
+    if args.analyze_layers or args.per_example_layer_plots or args.average_layer_plot:
+        layer_analysis_dir = os.path.join(project_root, "results", "feature_analysis", "layer_analysis", model_timestamp_dir)
+        os.makedirs(layer_analysis_dir, exist_ok=True)
 
-    # Get context templates once, will be cached for reuse
-    context_templates = sanitize_templates(get_context_templates(model, tokenizer, hparams.context_template_length_params, quiet=quiet_mode))
-    if args.show_templates and not quiet_mode:
-        #print("Cached context templates:", context_templates)
-        pass
+    # Initialize storage for averaged layer statistics
+    if args.average_layer_plot:
+        averaged_layer_stats = [{
+            'common_features_percentage': 0.0,
+            'average_pairwise_common_percentage': 0.0,
+            'num_samples': 0
+        } for _ in range(num_layers)]
 
-    # Process examples from the dataset
-    for i in range(args.num_examples):
-        record_idx = random.randint(0, len(dataset)-1)
+    # Process examples with progress bar
+    pbar_desc = f"Analyzing {args.model} examples"
+    for i in tqdm(range(args.num_examples), desc=pbar_desc, ncols=100):
+        if args.num_examples < 50:
+            record_idx = random.randint(0, len(dataset)-1)
+        else:
+            record_idx = i
         record = dataset[record_idx]
         request = record["requested_rewrite"]
         
         if args.show_example_info and not quiet_mode:
-            print(f"\nAnalyzing example {i+1}:")
-            print(f"Subject: {request['subject']}")
-            print(f"Prompt: {request['prompt']}")
-            print(f"Target: {request['target_new']['str']}")
+            tqdm.write(f"\nAnalyzing example {i+1} (idx: {record_idx}):")
+            tqdm.write(f"Subject: {request['subject']}")
+            tqdm.write(f"Prompt: {request['prompt']}")
+            tqdm.write(f"Target: {request['target_new']['str']}")
         
-        # Set up plot directories for this example
+        # Setup plot directories for regular analysis
         example_plot_dirs = {}
         if should_save_plots:
-            # For CDF plots, just pass the directory - no subdirectories
             if args.save_cdf:
                 example_plot_dirs['cdf'] = cdf_dir
-            # For distribution plots, keep the subdirectory structure
             if args.save_dist:
                 example_name = f"example_{record_idx}_subject_{request['subject'].replace(' ', '_')[:30]}"
                 example_plot_dirs['dist'] = os.path.join(dist_dir, example_name)
                 os.makedirs(example_plot_dirs['dist'], exist_ok=True)
         
-        # Run the analysis
-        results = analyze_sae_features(
-            model=model,
-            tok=tokenizer,
-            request=request,
-            hparams=hparams,
-            context_templates=context_templates,
-            plot_save_dir=example_plot_dirs if should_save_plots else None,
-            save_cdf=args.save_cdf,
-            save_dist=args.save_dist,
-            record_idx=record_idx
-        )
-        
-        if args.show_feature_stats and not quiet_mode:
-            stats = results["feature_statistics"]
-            print(f"\nFeature Statistics:")
-            print(f"Total number of features: {stats['total_features']}")
-            print(f"Number of common features: {stats['common_features_count']}")
-            print(f"Percentage of common features: {stats['common_features_percentage']:.2f}%")
+        # Per-example layer analysis
+        if args.per_example_layer_plots or args.average_layer_plot:
+            example_layer_stats = []
+            for layer in range(num_layers):
+                if not quiet_mode and args.analyze_layers:
+                    tqdm.write(f"\nAnalyzing layer {layer} for example {i+1}...")
+                
+                # Update hparams for current layer
+                layer_hparams = ROMEMODIFIEDHyperParams(**hparams_dict)
+                layer_hparams.layers = [layer]
+                
+                # Get context templates
+                context_templates = sanitize_templates(
+                    get_context_templates(model, tokenizer, layer_hparams.context_template_length_params, quiet=quiet_mode)
+                )
+                
+                # Run analysis for this layer
+                results = analyze_sae_features(
+                    model=model,
+                    tok=tokenizer,
+                    request=request,
+                    hparams=layer_hparams,
+                    context_templates=context_templates,
+                    plot_save_dir=None,
+                    save_cdf=False,
+                    save_dist=False
+                )
+                
+                stats = results["feature_statistics"]
+                example_layer_stats.append({
+                    'common_features_percentage': stats['common_features_percentage'],
+                    'average_pairwise_common_percentage': stats['average_pairwise_common_percentage']
+                })
+                
+                # Accumulate for averaging if needed
+                if args.average_layer_plot:
+                    averaged_layer_stats[layer]['common_features_percentage'] += stats['common_features_percentage']
+                    averaged_layer_stats[layer]['average_pairwise_common_percentage'] += stats['average_pairwise_common_percentage']
+                    averaged_layer_stats[layer]['num_samples'] += 1
             
-            print("\nTemplate-specific feature counts:")
-            for template_stats in stats["template_feature_counts"]:
-                template_idx = template_stats["template_idx"]
-                print(f"\nTemplate {template_idx + 1}:")
-                print(f"Number of active features: {template_stats['n_active_features']}")
-                print(f"Percentage of active features: {template_stats['percent_active']:.2f}%")
-        
-        if args.show_template_stats and not quiet_mode:
-            print("\nTemplate Statistics:")
-            print("=" * 80)
-            for stats in results["template_statistics"]:
-                print(f"\nTemplate {stats['template_idx'] + 1}: {stats['template_text']}")
-                print(f"Mean activation: {stats['mean_activation']:.4f}")
-                print(f"Std activation: {stats['std_activation']:.4f}")
-                print(f"Number of active features: {stats['num_active_features']}")
-                print("\nTop 10 feature activations:")
-                for val, feat_idx in zip(stats['top_values'], stats['top_feature_indices']):
-                    print(f"Feature {feat_idx}: {val:.4f}")
-                print("-" * 40)
+            # Generate per-example layer plot
+            if args.per_example_layer_plots:
+                plot_path = plot_layer_percentages(example_layer_stats, args.model, timestamp, layer_analysis_dir, i+1)
+                if not quiet_mode:
+                    tqdm.write(f"Layer analysis plot for example {i+1} saved at: {plot_path}")
 
+        # Regular analysis (if not doing layer analysis)
+        if not args.analyze_layers:
+            hparams = ROMEMODIFIEDHyperParams(**hparams_dict)
+            context_templates = sanitize_templates(
+                get_context_templates(model, tokenizer, hparams.context_template_length_params, quiet=quiet_mode)
+            )
+            
+            results = analyze_sae_features(
+                model=model,
+                tok=tokenizer,
+                request=request,
+                hparams=hparams,
+                context_templates=context_templates,
+                plot_save_dir=example_plot_dirs if should_save_plots else None,
+                save_cdf=args.save_cdf,
+                save_dist=args.save_dist,
+                record_idx=record_idx
+            )
+            
+            if args.show_feature_stats:
+                stats = results["feature_statistics"]
+                tqdm.write(f"\nExample {i+1} (idx: {record_idx}) - Feature Statistics:")
+                tqdm.write(f"Total number of features: {stats['total_features']}")
+                tqdm.write(f"Number of common features: {stats['common_features_count']}")
+                tqdm.write(f"Percentage of common features: {stats['common_features_percentage']:.2f}%")
+                tqdm.write(f"Average active features per template: {stats['average_active_features']:.2f}")
+                tqdm.write(f"Average percentage of active features: {stats['average_active_percentage']:.2f}%")
+                tqdm.write(f"\nPairwise Feature Statistics:")
+                tqdm.write(f"Average number of common features between pairs: {stats['average_pairwise_common_count']:.2f}")
+                tqdm.write(f"Average percentage of common features between pairs: {stats['average_pairwise_common_percentage']:.2f}%")
+            
+            if args.show_template_stats and not quiet_mode:
+                tqdm.write(f"\nExample {i+1} (idx: {record_idx}) - Template Statistics:")
+                tqdm.write("=" * 80)
+                for stats in results["template_statistics"]:
+                    tqdm.write(f"\nTemplate {stats['template_idx'] + 1}: {stats['template_text']}")
+                    tqdm.write(f"Mean activation: {stats['mean_activation']:.4f}")
+                    tqdm.write(f"Std activation: {stats['std_activation']:.4f}")
+                    tqdm.write(f"Number of active features: {stats['num_active_features']}")
+                    tqdm.write(f"Percentage of active features: {stats['percent_active_features']:.2f}%")
+                    tqdm.write("\nTop 10 feature activations:")
+                    for val, feat_idx in zip(stats['top_values'], stats['top_feature_indices']):
+                        tqdm.write(f"Feature {feat_idx}: {val:.4f}")
+                    tqdm.write("-" * 40)
+
+    # Generate averaged layer plot
+    if args.average_layer_plot:
+        # Average the accumulated statistics
+        averaged_stats = []
+        for layer_stat in averaged_layer_stats:
+            if layer_stat['num_samples'] > 0:
+                averaged_stats.append({
+                    'common_features_percentage': layer_stat['common_features_percentage'] / layer_stat['num_samples'],
+                    'average_pairwise_common_percentage': layer_stat['average_pairwise_common_percentage'] / layer_stat['num_samples']
+                })
+        
+        # Create the averaged plot
+        plot_path = plot_layer_percentages(averaged_stats, args.model, timestamp, layer_analysis_dir)
+        if not quiet_mode:
+            print(f"\nAveraged layer analysis plot saved at: {plot_path}")
+
+    # Print save locations
     if should_save_plots:
-        print("Results saved in:")
+        print("\nResults saved in:")
         if args.save_cdf:
             print(f"CDF plots: {cdf_dir}")
         if args.save_dist:
             print(f"Distribution plots: {dist_dir}")
+        if args.analyze_layers or args.per_example_layer_plots or args.average_layer_plot:
+            print(f"Layer analysis plots: {layer_analysis_dir}")
 
 if __name__ == "__main__":
     main() 
