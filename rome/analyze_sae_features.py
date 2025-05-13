@@ -12,74 +12,6 @@ import matplotlib.pyplot as plt
 import os
 import gc
 
-def plot_per_template_activation_distribution(all_template_activations: List[torch.Tensor],
-                                      context_templates: List[str],
-                                      save_dir: str):
-    """
-    Plot histogram distribution of non-zero feature activations for each context template separately.
-    
-    Args:
-        all_template_activations: List of activation tensors for each template
-        context_templates: List of template strings
-        save_dir: Directory to save the plots
-    """
-    for i, activations in enumerate(all_template_activations):
-        plt.figure(figsize=(10, 6))
-        
-        # Get non-zero activations
-        active_vals = activations[activations > 0].cpu().numpy()
-        if len(active_vals) == 0:
-            plt.close()
-            continue
-        
-        # Create histogram
-        plt.hist(active_vals, bins=50, alpha=0.75, density=True)
-        plt.xlabel('Activation Value')
-        plt.ylabel('Density')
-        plt.title(f'Distribution of Active Feature Activations - Template {i+1}')
-        plt.grid(True)
-        
-        # Save plot
-        plt.savefig(os.path.join(save_dir, f'template_{i+1}_distribution.png'), bbox_inches='tight')
-        plt.close()
-
-def plot_per_template_activation_cdf(all_template_activations: List[torch.Tensor], 
-                              context_templates: List[str],
-                              save_path: str = None):
-    """
-    Plot CDF of non-zero feature activations comparing all templates on the same plot.
-    
-    Args:
-        all_template_activations: List of activation tensors for each template
-        context_templates: List of template strings
-        save_path: Optional path to save the plot
-    """
-    plt.figure(figsize=(12, 8))
-    
-    for i, activations in enumerate(all_template_activations):
-        # Get non-zero activations
-        active_vals = activations[activations > 0].cpu().numpy()
-        if len(active_vals) == 0:
-            continue
-            
-        # Sort values for CDF
-        sorted_vals = np.sort(active_vals)
-        # Calculate cumulative probabilities
-        p = np.arange(1, len(sorted_vals) + 1) / len(sorted_vals)
-        
-        # Plot CDF
-        plt.plot(sorted_vals, p, label=f'Template {i+1}')
-    
-    plt.xlabel('Activation Value')
-    plt.ylabel('CDF')
-    plt.title('CDF of Active Feature Activations by Template')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.grid(True)
-    
-    if save_path:
-        plt.savefig(save_path, bbox_inches='tight')
-    plt.close()
-
 def compute_common_features_across_all(all_active_features: List[set]) -> List[int]:
     """
     Compute features that are common across all templates.
@@ -151,9 +83,6 @@ def analyze_sae_features(
     request: Dict,
     hparams: ROMEMODIFIEDHyperParams,
     context_templates: List[str],
-    plot_save_dir: Dict[str, str] = None,
-    save_cdf: bool = True,
-    save_dist: bool = True,
     record_idx: int = None,
 ) -> Dict:
     """
@@ -165,10 +94,7 @@ def analyze_sae_features(
         request: The editing request containing prompt and target information
         hparams: Hyperparameters for the editing process
         context_templates: List of context templates used for generating prompts
-        plot_save_dir: Dictionary with 'cdf' and 'dist' keys containing paths for saving plots
-        save_cdf: Whether to save CDF plots
-        save_dist: Whether to save distribution plots
-        record_idx: Index of the record in the dataset for naming the plots
+        record_idx: Index of the record in the dataset
         
     Returns:
         Dictionary containing analysis of SAE features including:
@@ -288,18 +214,6 @@ def analyze_sae_features(
             "average_active_features": avg_active_features,
             "average_active_percentage": avg_active_percentage
         }
-
-        # Generate plots if directory provided
-        if plot_save_dir:
-            # Save CDF plot
-            if save_cdf and 'cdf' in plot_save_dir:
-                subject = request["subject"].replace(' ', '_')[:30]
-                cdf_path = os.path.join(plot_save_dir['cdf'], f"template_cdf_example_{record_idx}_subject_{subject}.png")
-                plot_per_template_activation_cdf(all_template_activations, context_templates, cdf_path)
-            
-            # Save distribution plots
-            if save_dist and 'dist' in plot_save_dir:
-                plot_per_template_activation_distribution(all_template_activations, context_templates, plot_save_dir['dist'])
 
         # Store all template activations
         feature_analysis["context_activations"] = all_template_activations

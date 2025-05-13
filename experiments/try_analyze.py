@@ -10,6 +10,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
+from typing import List
 
 # Add project root to Python path
 project_root = str(Path(__file__).parent.parent)
@@ -120,6 +121,74 @@ def plot_layer_percentages(layer_stats: list, model_name: str, timestamp: str, s
     plt.close()
     
     return plot_path
+
+def plot_per_template_activation_distribution(all_template_activations: List[torch.Tensor],
+                                      context_templates: List[str],
+                                      save_dir: str):
+    """
+    Plot histogram distribution of non-zero feature activations for each context template separately.
+    
+    Args:
+        all_template_activations: List of activation tensors for each template
+        context_templates: List of template strings
+        save_dir: Directory to save the plots
+    """
+    for i, activations in enumerate(all_template_activations):
+        plt.figure(figsize=(10, 6))
+        
+        # Get non-zero activations
+        active_vals = activations[activations > 0].cpu().numpy()
+        if len(active_vals) == 0:
+            plt.close()
+            continue
+        
+        # Create histogram
+        plt.hist(active_vals, bins=50, alpha=0.75, density=True)
+        plt.xlabel('Activation Value')
+        plt.ylabel('Density')
+        plt.title(f'Distribution of Active Feature Activations - Template {i+1}')
+        plt.grid(True)
+        
+        # Save plot
+        plt.savefig(os.path.join(save_dir, f'template_{i+1}_distribution.png'), bbox_inches='tight')
+        plt.close()
+
+def plot_per_template_activation_cdf(all_template_activations: List[torch.Tensor], 
+                              context_templates: List[str],
+                              save_path: str = None):
+    """
+    Plot CDF of non-zero feature activations comparing all templates on the same plot.
+    
+    Args:
+        all_template_activations: List of activation tensors for each template
+        context_templates: List of template strings
+        save_path: Optional path to save the plot
+    """
+    plt.figure(figsize=(12, 8))
+    
+    for i, activations in enumerate(all_template_activations):
+        # Get non-zero activations
+        active_vals = activations[activations > 0].cpu().numpy()
+        if len(active_vals) == 0:
+            continue
+            
+        # Sort values for CDF
+        sorted_vals = np.sort(active_vals)
+        # Calculate cumulative probabilities
+        p = np.arange(1, len(sorted_vals) + 1) / len(sorted_vals)
+        
+        # Plot CDF
+        plt.plot(sorted_vals, p, label=f'Template {i+1}')
+    
+    plt.xlabel('Activation Value')
+    plt.ylabel('CDF')
+    plt.title('CDF of Active Feature Activations by Template')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.grid(True)
+    
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
+    plt.close()
 
 def parse_args():
     """
@@ -292,16 +361,6 @@ def main():
             tqdm.write(f"Prompt: {request['prompt']}")
             tqdm.write(f"Target: {request['target_new']['str']}")
         
-        # Setup plot directories for regular analysis
-        example_plot_dirs = {}
-        if should_save_plots:
-            if args.save_cdf:
-                example_plot_dirs['cdf'] = cdf_dir
-            if args.save_dist:
-                example_name = f"example_{record_idx}_subject_{request['subject'].replace(' ', '_')[:30]}"
-                example_plot_dirs['dist'] = os.path.join(dist_dir, example_name)
-                os.makedirs(example_plot_dirs['dist'], exist_ok=True)
-        
         # Per-example layer analysis
         if args.per_example_layer_plots or args.average_layer_plot:
             example_layer_stats = []
@@ -325,9 +384,7 @@ def main():
                     request=request,
                     hparams=layer_hparams,
                     context_templates=context_templates,
-                    plot_save_dir=None,
-                    save_cdf=False,
-                    save_dist=False
+                    record_idx=record_idx
                 )
                 
                 stats = results["feature_statistics"]
@@ -361,12 +418,24 @@ def main():
                 request=request,
                 hparams=hparams,
                 context_templates=context_templates,
-                plot_save_dir=example_plot_dirs if should_save_plots else None,
-                save_cdf=args.save_cdf,
-                save_dist=args.save_dist,
                 record_idx=record_idx
             )
             
+            # Handle plotting here
+            if should_save_plots:
+                # Handle CDF plot
+                if args.save_cdf:
+                    subject = request["subject"].replace(' ', '_')[:30]
+                    cdf_path = os.path.join(cdf_dir, f"template_cdf_example_{record_idx}_subject_{subject}.png")
+                    plot_per_template_activation_cdf(results["context_activations"], context_templates, cdf_path)
+                
+                # Handle distribution plots
+                if args.save_dist:
+                    example_name = f"example_{record_idx}_subject_{request['subject'].replace(' ', '_')[:30]}"
+                    dist_save_dir = os.path.join(dist_dir, example_name)
+                    os.makedirs(dist_save_dir, exist_ok=True)
+                    plot_per_template_activation_distribution(results["context_activations"], context_templates, dist_save_dir)
+
             if args.show_feature_stats:
                 stats = results["feature_statistics"]
                 tqdm.write(f"\nExample {i+1} (idx: {record_idx}) - Feature Statistics:")
