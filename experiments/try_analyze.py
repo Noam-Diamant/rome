@@ -36,6 +36,47 @@ def get_num_layers(model_name: str) -> int:
     else:
         raise AttributeError(f"Could not find number of layers in config for {model_name}")
 
+def plot_single_layer_percentage(layer_stats: list, stat_type: str, model_name: str, timestamp: str, save_dir: str):
+    """
+    Create a bar plot showing a single feature percentage metric across layers.
+    
+    Args:
+        layer_stats: List of dictionaries containing statistics for each layer
+        stat_type: Type of statistic to plot ('common' or 'pairwise')
+        model_name: Name of the model being analyzed
+        timestamp: Timestamp for saving the plot
+        save_dir: Directory to save the plot
+    """
+    layers = np.arange(len(layer_stats))
+    
+    if stat_type == 'common':
+        percentages = [stats['common_features_percentage'] for stats in layer_stats]
+        title = 'Common Features Across All Templates'
+        color = 'green'
+        filename = 'layer_percentages_common'
+    else:  # pairwise
+        percentages = [stats['average_pairwise_common_percentage'] for stats in layer_stats]
+        title = 'Average Pairwise Common Features'
+        color = 'red'
+        filename = 'layer_percentages_pairwise'
+    
+    plt.figure(figsize=(12, 6))
+    plt.bar(layers, percentages, color=color, alpha=0.7)
+    
+    plt.xlabel('Layer Number')
+    plt.ylabel('Percentage of Features (%)')
+    plt.title(f'{title} - {model_name}')
+    plt.xticks(layers)
+    plt.grid(True, alpha=0.3)
+    
+    # Save plot
+    filename = f'{filename}_{model_name.replace("/", "_")}_{timestamp}.png'
+    plot_path = os.path.join(save_dir, filename)
+    plt.savefig(plot_path, bbox_inches='tight')
+    plt.close()
+    
+    return plot_path
+
 def plot_layer_percentages(layer_stats: list, model_name: str, timestamp: str, save_dir: str, example_idx: int = None):
     """
     Create a bar plot showing feature percentages across layers.
@@ -363,10 +404,18 @@ def main():
                     'average_pairwise_common_percentage': layer_stat['average_pairwise_common_percentage'] / layer_stat['num_samples']
                 })
         
-        # Create the averaged plot
+        # Create the combined plot
         plot_path = plot_layer_percentages(averaged_stats, args.model, timestamp, layer_analysis_dir)
+        
+        # Create individual plots for common and pairwise features
+        common_plot_path = plot_single_layer_percentage(averaged_stats, 'common', args.model, timestamp, layer_analysis_dir)
+        pairwise_plot_path = plot_single_layer_percentage(averaged_stats, 'pairwise', args.model, timestamp, layer_analysis_dir)
+        
         if not quiet_mode:
-            print(f"\nAveraged layer analysis plot saved at: {plot_path}")
+            print(f"\nAveraged layer analysis plots saved at:")
+            print(f"Combined plot: {plot_path}")
+            print(f"Common features plot: {common_plot_path}")
+            print(f"Pairwise features plot: {pairwise_plot_path}")
 
     # Print save locations
     if should_save_plots:
