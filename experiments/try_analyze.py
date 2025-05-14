@@ -12,10 +12,13 @@ import numpy as np
 from tqdm import tqdm
 from typing import List
 
-# Add project root to Python path
+# Add project root and experiments to Python path
 project_root = str(Path(__file__).parent.parent)
 if project_root not in sys.path:
     sys.path.append(project_root)
+experiments_dir = str(Path(__file__).parent)
+if experiments_dir not in sys.path:
+    sys.path.append(experiments_dir)
 
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 from rome.rome_hparams import ROMEMODIFIEDHyperParams
@@ -127,11 +130,6 @@ def plot_per_template_activation_distribution(all_template_activations: List[tor
                                       save_dir: str):
     """
     Plot histogram distribution of non-zero feature activations for each context template separately.
-    
-    Args:
-        all_template_activations: List of activation tensors for each template
-        context_templates: List of template strings
-        save_dir: Directory to save the plots
     """
     for i, activations in enumerate(all_template_activations):
         plt.figure(figsize=(10, 6))
@@ -152,17 +150,15 @@ def plot_per_template_activation_distribution(all_template_activations: List[tor
         # Save plot
         plt.savefig(os.path.join(save_dir, f'template_{i+1}_distribution.png'), bbox_inches='tight')
         plt.close()
+        
+        # Only clear large arrays
+        del active_vals
 
 def plot_per_template_activation_cdf(all_template_activations: List[torch.Tensor], 
                               context_templates: List[str],
                               save_path: str = None):
     """
     Plot CDF of non-zero feature activations comparing all templates on the same plot.
-    
-    Args:
-        all_template_activations: List of activation tensors for each template
-        context_templates: List of template strings
-        save_path: Optional path to save the plot
     """
     plt.figure(figsize=(12, 8))
     
@@ -174,11 +170,13 @@ def plot_per_template_activation_cdf(all_template_activations: List[torch.Tensor
             
         # Sort values for CDF
         sorted_vals = np.sort(active_vals)
-        # Calculate cumulative probabilities
         p = np.arange(1, len(sorted_vals) + 1) / len(sorted_vals)
         
         # Plot CDF
         plt.plot(sorted_vals, p, label=f'Template {i+1}')
+        
+        # Clear large arrays
+        del active_vals, sorted_vals, p
     
     plt.xlabel('Activation Value')
     plt.ylabel('CDF')
