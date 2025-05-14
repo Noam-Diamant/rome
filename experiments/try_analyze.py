@@ -55,12 +55,12 @@ def plot_single_layer_percentage(layer_stats: list, stat_type: str, model_name: 
     
     if stat_type == 'common':
         percentages = [stats['common_features_percentage'] for stats in layer_stats]
-        title = 'Common Features Across All Templates'
+        title = 'Common Features Across All Templates, precentage to total features'
         color = 'green'
         filename = 'layer_percentages_common'
     else:  # pairwise
         percentages = [stats['average_pairwise_common_percentage'] for stats in layer_stats]
-        title = 'Average Pairwise Common Features'
+        title = 'Average Pairwise Common Features, precentage to total features'
         color = 'red'
         filename = 'layer_percentages_pairwise'
     
@@ -81,7 +81,7 @@ def plot_single_layer_percentage(layer_stats: list, stat_type: str, model_name: 
     
     return plot_path
 
-def plot_layer_percentages(layer_stats: list, model_name: str, timestamp: str, save_dir: str, example_idx: int = None):
+def plot_layer_percentages_without_active(layer_stats: list, model_name: str, timestamp: str, save_dir: str, example_idx: int = None):
     """
     Create a bar plot showing feature percentages across layers.
     
@@ -106,7 +106,7 @@ def plot_layer_percentages(layer_stats: list, model_name: str, timestamp: str, s
     
     plt.xlabel('Layer Number')
     plt.ylabel('Percentage of Features (%)')
-    title = f'Feature Commonality Across Layers - {model_name}'
+    title = f'Feature Commonality Across Layers, precentage to total features - {model_name}'
     if example_idx is not None:
         title += f' - Example {example_idx}'
     plt.title(title)
@@ -187,6 +187,94 @@ def plot_per_template_activation_cdf(all_template_activations: List[torch.Tensor
     if save_path:
         plt.savefig(save_path, bbox_inches='tight')
     plt.close()
+
+def plot_layer_percentages_with_active(layer_stats: list, model_name: str, timestamp: str, save_dir: str, example_idx: int = None):
+    """
+    Create a bar plot showing feature percentages across layers, including average active features.
+    """
+    layers = np.arange(len(layer_stats))
+    common_percentages = [stats['common_features_percentage'] for stats in layer_stats]
+    pairwise_percentages = [stats['average_pairwise_common_percentage'] for stats in layer_stats]
+    active_percentages = [stats['average_active_percentage'] for stats in layer_stats]
+    
+    plt.figure(figsize=(12, 6))
+    bar_width = 0.25
+    
+    plt.bar(layers - bar_width, common_percentages, bar_width, 
+            label='Common Features Across All Templates', color='green', alpha=0.7)
+    plt.bar(layers, pairwise_percentages, bar_width,
+            label='Average Pairwise Common Features', color='red', alpha=0.7)
+    plt.bar(layers + bar_width, active_percentages, bar_width,
+            label='Average Active Features', color='blue', alpha=0.7)
+    
+    plt.xlabel('Layer Number')
+    plt.ylabel('Percentage of Total Features (%)')
+    title = f'Feature Analysis Across Layers, precentage to total features - {model_name}'
+    if example_idx is not None:
+        title += f' - Example {example_idx}'
+    plt.title(title)
+    plt.xticks(layers)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # Save plot
+    filename = 'layer_percentages_with_active'
+    if example_idx is not None:
+        filename += f'_example_{example_idx}'
+    filename += f'_{model_name.replace("/", "_")}_{timestamp}.png'
+    plot_path = os.path.join(save_dir, filename)
+    plt.savefig(plot_path, bbox_inches='tight')
+    plt.close()
+    
+    return plot_path
+
+def plot_layer_percentages_relative(layer_stats: list, model_name: str, timestamp: str, save_dir: str, example_idx: int = None):
+    """
+    Create a bar plot showing feature percentages relative to average active features.
+    """
+    layers = np.arange(len(layer_stats))
+    
+    # Calculate percentages relative to average active features
+    relative_common = []
+    relative_pairwise = []
+    
+    for stats in layer_stats:
+        avg_active = stats['average_active_percentage']
+        if avg_active > 0:  # Avoid division by zero
+            relative_common.append((stats['common_features_percentage'] / avg_active) * 100)
+            relative_pairwise.append((stats['average_pairwise_common_percentage'] / avg_active) * 100)
+        else:
+            relative_common.append(0)
+            relative_pairwise.append(0)
+    
+    plt.figure(figsize=(12, 6))
+    bar_width = 0.35
+    
+    plt.bar(layers - bar_width/2, relative_common, bar_width, 
+            label='Common Features (% of Active)', color='green', alpha=0.7)
+    plt.bar(layers + bar_width/2, relative_pairwise, bar_width,
+            label='Average Pairwise Common (% of Active)', color='red', alpha=0.7)
+    
+    plt.xlabel('Layer Number')
+    plt.ylabel('Percentage of Average Active Features (%)')
+    title = f'Relative Feature Analysis Across Layers, precentage to average active features - {model_name}'
+    if example_idx is not None:
+        title += f' - Example {example_idx}'
+    plt.title(title)
+    plt.xticks(layers)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # Save plot
+    filename = 'layer_percentages_relative'
+    if example_idx is not None:
+        filename += f'_example_{example_idx}'
+    filename += f'_{model_name.replace("/", "_")}_{timestamp}.png'
+    plot_path = os.path.join(save_dir, filename)
+    plt.savefig(plot_path, bbox_inches='tight')
+    plt.close()
+    
+    return plot_path
 
 def parse_args():
     """
@@ -340,6 +428,7 @@ def main():
         averaged_layer_stats = [{
             'common_features_percentage': 0.0,
             'average_pairwise_common_percentage': 0.0,
+            'average_active_percentage': 0.0,
             'num_samples': 0
         } for _ in range(num_layers)]
 
@@ -388,20 +477,23 @@ def main():
                 stats = results["feature_statistics"]
                 example_layer_stats.append({
                     'common_features_percentage': stats['common_features_percentage'],
-                    'average_pairwise_common_percentage': stats['average_pairwise_common_percentage']
+                    'average_pairwise_common_percentage': stats['average_pairwise_common_percentage'],
+                    'average_active_percentage': stats['average_active_percentage']
                 })
                 
                 # Accumulate for averaging if needed
                 if args.average_layer_plot:
                     averaged_layer_stats[layer]['common_features_percentage'] += stats['common_features_percentage']
                     averaged_layer_stats[layer]['average_pairwise_common_percentage'] += stats['average_pairwise_common_percentage']
+                    averaged_layer_stats[layer]['average_active_percentage'] += stats['average_active_percentage']
                     averaged_layer_stats[layer]['num_samples'] += 1
             
-            # Generate per-example layer plot
+            # Generate per-example layer plots
             if args.per_example_layer_plots:
-                plot_path = plot_layer_percentages(example_layer_stats, args.model, timestamp, layer_analysis_dir, i+1)
+                plot_path_active = plot_layer_percentages_with_active(example_layer_stats, args.model, timestamp, layer_analysis_dir, i+1)
                 if not quiet_mode:
-                    tqdm.write(f"Layer analysis plot for example {i+1} saved at: {plot_path}")
+                    tqdm.write(f"Layer analysis plots for example {i+1} saved at:")
+                    tqdm.write(f"With active features: {plot_path_active}")
 
         # Regular analysis (if not doing layer analysis)
         if not args.analyze_layers:
@@ -468,11 +560,14 @@ def main():
             if layer_stat['num_samples'] > 0:
                 averaged_stats.append({
                     'common_features_percentage': layer_stat['common_features_percentage'] / layer_stat['num_samples'],
-                    'average_pairwise_common_percentage': layer_stat['average_pairwise_common_percentage'] / layer_stat['num_samples']
+                    'average_pairwise_common_percentage': layer_stat['average_pairwise_common_percentage'] / layer_stat['num_samples'],
+                    'average_active_percentage': layer_stat['average_active_percentage'] / layer_stat['num_samples']
                 })
         
-        # Create the combined plot
-        plot_path = plot_layer_percentages(averaged_stats, args.model, timestamp, layer_analysis_dir)
+        # Create all plots
+        plot_path = plot_layer_percentages_without_active(averaged_stats, args.model, timestamp, layer_analysis_dir)
+        plot_path_active = plot_layer_percentages_with_active(averaged_stats, args.model, timestamp, layer_analysis_dir)
+        plot_path_relative = plot_layer_percentages_relative(averaged_stats, args.model, timestamp, layer_analysis_dir)
         
         # Create individual plots for common and pairwise features
         common_plot_path = plot_single_layer_percentage(averaged_stats, 'common', args.model, timestamp, layer_analysis_dir)
@@ -480,7 +575,9 @@ def main():
         
         if not quiet_mode:
             print(f"\nAveraged layer analysis plots saved at:")
-            print(f"Combined plot: {plot_path}")
+            print(f"Original combined plot: {plot_path}")
+            print(f"Combined plot with active features: {plot_path_active}")
+            print(f"Relative to active features plot: {plot_path_relative}")
             print(f"Common features plot: {common_plot_path}")
             print(f"Pairwise features plot: {pairwise_plot_path}")
 

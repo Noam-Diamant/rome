@@ -101,7 +101,11 @@ def analyze_sae_features(
         - Common features across sentences
         - Context template activations
         - For each template: mean activation, std, top 10 feature values and indices
-        - Feature count statistics
+        - Feature count statistics including:
+          * Total features
+          * Common features count and percentage
+          * Average pairwise common features
+          * Average active features and percentage
     """
     try:
         # Load appropriate SAE model based on the base model
